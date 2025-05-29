@@ -5,6 +5,13 @@ import numpy as np
 import pandas as pd
 import json
 # from pathlib import Path
+import multiprocessing as mp
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_multiprocessing():
+    """Set multiprocessing to use spawn method to avoid fork warnings in pytest"""
+    mp.set_start_method('spawn', force=True)
+
 
 # Add the src directory to Python path to import local reid_hota
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -173,38 +180,32 @@ class TestHOTA_meva_subset:
         ref_dfs, comp_dfs = tracking_data
 
         # Compute HOTA
-        # combined_hota, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, output_dir='./hota_plots', id_alignment_method='per_frame', similarity_metric='iou')
-        # combined_hota, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, output_dir='./hota_plots', id_alignment_method='per_video', similarity_metric='iou')
-        # combined_hota, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, output_dir='./hota_plots', id_alignment_method='global', similarity_metric='iou')
-        combined_hota, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, id_alignment_method='global', similarity_metric='iou')
+        # global_hota_data, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, output_dir='./hota_plots', id_alignment_method='per_frame', similarity_metric='iou')
+        # global_hota_data, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, output_dir='./hota_plots', id_alignment_method='per_video', similarity_metric='iou')
+        # global_hota_data, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, output_dir='./hota_plots', id_alignment_method='global', similarity_metric='iou')
+        # global_hota_data, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, id_alignment_method='global', similarity_metric='iou')
 
-        # combined_hota, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, output_dir='./hota_plots', similarity_metric='iou', gids=[1,3])
-        # combined_hota, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, output_dir='./hota_plots', id_alignment_method='global', similarity_metric='iou', class_ids=[2, 3])
+        evaluator = fh.HOTAReIDEvaluator(n_workers=40, id_alignment_method='global', similarity_metric='iou')
+        evaluator.evaluate(ref_dfs, comp_dfs)
+        global_hota_data = evaluator.get_global_hota_data()
+        # per_video_hota_data = evaluator.get_per_video_hota_data()
+        # per_frame_hota_data = evaluator.get_per_frame_hota_data()
 
-        # save_hota_results(combined_hota, './test_data/mevid-dataset-rev2_results_subset.json')
-        # for video_id, video_data in per_video_hota_data.items():
-        #     save_hota_results(video_data, f'./test_data/mevid-dataset-rev2_results_subset_per_video_{video_id}.json')
+        evaluator.export_to_file('./hota_plots')
 
-        # print("combined IDF1:")
-        # print(combined_hota.data['IDF1'])
-        # print("combined HOTA:")
-        # print(combined_hota.data['HOTA'])
-        # print("combined HOTA data keys:")
-        # for key in combined_hota.data.keys():
-        #     print(f"{key}: {combined_hota.data[key]}")
 
         print("combined HOTA data keys (at 0.5):")
         idx = np.where(HOTA_DATA.array_labels == 0.5)[0][0]
-        for key in combined_hota.data.keys():
+        for key in global_hota_data.data.keys():
             if 'counts' not in key:
-                print(f"{key}: {combined_hota.data[key][idx]}")
+                print(f"{key}: {global_hota_data.data[key][idx]}")
 
         failed_keys = []
         gt_results = load_hota_results(os.path.join(os.path.dirname(__file__), 'data', 'mevid-dataset-rev2', 'results_subset.json'))
         for key in gt_results.keys():
-            if not np.allclose(combined_hota.data[key], gt_results[key], atol=1e-8):
+            if not np.allclose(global_hota_data.data[key], gt_results[key], atol=1e-8):
                 print(f"Failed on key: {key}")
-                print(f"  difference: {combined_hota.data[key] - gt_results[key]}")
+                print(f"  difference: {global_hota_data.data[key] - gt_results[key]}")
                 failed_keys.append(key)
         
         if len(failed_keys) > 0:

@@ -4,6 +4,7 @@ __pycache__/
 
 # Datasets
 tests/data
+hota_plots/
 
 
 # # Distribution / packaging
