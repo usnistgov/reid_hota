@@ -1,0 +1,225 @@
+import pytest
+import os
+import sys
+import numpy as np
+import pandas as pd
+import json
+# from pathlib import Path
+
+# Add the src directory to Python path to import local reid_hota
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
+from reid_hota import fast_hota as fh
+from reid_hota import HOTA_DATA
+
+
+
+@pytest.fixture
+def tracking_data() -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
+    """Pytest fixture that creates tracking data for testing."""
+    gt_fp = os.path.join(os.path.dirname(__file__), 'data', 'mevid-dataset-rev2', 'gt')
+    pred_fp = os.path.join(os.path.dirname(__file__), 'data', 'mevid-dataset-rev2', 'mit-ll')
+
+    fns = [fn for fn in os.listdir(gt_fp) if fn.endswith('.csv')]
+    ref_dfs = {}
+    comp_dfs = {}
+    for fn in fns[:15]:
+        gt_df = pd.read_csv(os.path.join(gt_fp, fn))
+        pred_df = pd.read_csv(os.path.join(pred_fp, fn))
+
+        
+        if 'frame' in gt_df.columns:
+            gt_df['frame_id'] = gt_df['frame']
+        if 'frame' in pred_df.columns:
+            pred_df['frame_id'] = pred_df['frame']
+        # Rename width column to w if it exists
+        if 'width' in gt_df.columns:
+            gt_df['w'] = gt_df['width']
+        if 'width' in pred_df.columns:
+            pred_df['w'] = pred_df['width']
+        
+        # Rename height column to h if it exists
+        if 'height' in gt_df.columns:
+            gt_df['h'] = gt_df['height']
+        if 'height' in pred_df.columns:
+            pred_df['h'] = pred_df['height']
+
+        gt_df['lat'] = np.random.rand(len(gt_df)) * 10
+        pred_df['lat'] = np.random.rand(len(pred_df)) * 10
+
+        gt_df['lon'] = np.random.rand(len(gt_df)) * 10
+        pred_df['lon'] = np.random.rand(len(pred_df)) * 10
+
+        gt_df['alt'] = np.random.rand(len(gt_df)) * 10
+        pred_df['alt'] = np.random.rand(len(pred_df)) * 10
+
+        # Create a new random box for each frame
+        # Create new rows for each frame this tests the FP purge
+        # new_rows = []
+        # for frame_id in gt_df['frame_id'].unique():
+        #     new_row = {
+        #         'frame_id': frame_id,
+        #         'object_id': int(np.random.rand() * 100000) + 100000,
+        #         'x': np.random.rand() * 1920,  # Random x coordinate
+        #         'y': np.random.rand() * 1080,  # Random y coordinate
+        #         'w': np.random.rand() * 100 + 50,  # Random width between 50-150
+        #         'h': np.random.rand() * 100 + 50,  # Random height between 50-150
+        #         'class_id': 1, 
+        #         'lat': np.random.rand() * 10,
+        #         'lon': np.random.rand() * 10,
+        #         'alt': np.random.rand() * 10
+        #     }
+        #     new_rows.append(new_row)
+        
+        # # Add all new rows at once to both dataframes
+        # new_df = pd.DataFrame(new_rows)
+        # pred_df = pd.concat([pred_df, new_df], ignore_index=True)
+
+        # hash(f"frame_id:{frame_id} object_id:{object_id} x:{x} y:{y} w:{w} h:{h} class_id:{class_id} lat:{lat} lon:{lon} alt:{alt}")
+        pred_df['box_hash'] = pred_df.apply(lambda row: str(hash(f"frame_id:{row['frame_id']} object_id:{row['object_id']} x:{row['x']} y:{row['y']} w:{row['w']} h:{row['h']} class_id:{row['class_id']} lat:{row['lat']} lon:{row['lon']} alt:{row['alt']}")), axis=1)
+        gt_df['box_hash'] = gt_df.apply(lambda row: str(hash(f"frame_id:{row['frame_id']} object_id:{row['object_id']} x:{row['x']} y:{row['y']} w:{row['w']} h:{row['h']} class_id:{row['class_id']} lat:{row['lat']} lon:{row['lon']} alt:{row['alt']}")), axis=1)
+
+        
+
+
+        ref_dfs[fn.replace('.csv', '')] = gt_df
+        comp_dfs[fn.replace('.csv', '')] = pred_df
+
+    # Print statistics about the number of frames in each video
+    frame_counts = []
+    for video_id in ref_dfs:
+        unique_frames = ref_dfs[video_id]['frame_id'].nunique()
+        frame_counts.append(unique_frames)
+
+    # Print class IDs present in both ref_dfs and comp_dfs
+    ref_class_ids = set()
+    comp_class_ids = set()
+    
+    for video_id in ref_dfs:
+        ref_class_ids.update(ref_dfs[video_id]['class_id'].unique())
+    for video_id in comp_dfs:
+        comp_class_ids.update(comp_dfs[video_id]['class_id'].unique())
+        
+    print("Class IDs in reference data:", sorted(list(ref_class_ids)))
+    print("Class IDs in comparison data:", sorted(list(comp_class_ids)))
+
+    
+    if frame_counts:
+        print(f"Frame count statistics:")
+        print(f"  Min frames: {min(frame_counts)}")
+        print(f"  Max frames: {max(frame_counts)}")
+        print(f"  Mean frames: {sum(frame_counts)/len(frame_counts):.2f}")
+        print(f"  total frames: {sum(frame_counts)}")
+    return ref_dfs, comp_dfs
+
+
+
+
+        
+
+def save_hota_results(combined_hota, fp):
+    # Create a serializable dictionary from the combined_hota data
+    hota_data_dict = {}
+    for key in ['TP','FP','FN','LocA','HOTA','AssA', 'AssRe', 'AssPr', 'DetA', 'DetRe', 'DetPr', 'OWTA']:
+        # Convert numpy arrays to lists for JSON serialization
+        val = combined_hota.data[key]
+        if isinstance(val, np.ndarray):
+            val = val.tolist()
+        else:
+            raise ValueError(f"Unexpected type: {type(val)}")
+        hota_data_dict[key] = val
+    
+    # Save to JSON file
+    assert fp.endswith('.json'), f"File must have a .json extension, got {fp}"
+    with open(fp, 'w') as f:
+        json.dump(hota_data_dict, f, indent=2)
+
+def load_hota_results(fp):
+    assert fp.endswith('.json'), f"File must have a .json extension, got {fp}"
+    with open(fp, 'r') as f:
+        hota_data_dict = json.load(f)
+    return hota_data_dict
+
+
+# class TestHOTA_meva:
+#     """Test class for HOTA metric functionality."""
+    
+#     def test_compute_hota(self, tracking_data):
+#         """Test the HOTA metric computation."""
+#         ref_dfs, comp_dfs = tracking_data
+
+#         # Compute HOTA
+#         combined_hota, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, output_dir='./hota_plots')#'./hota_plots')#, gids=[1,3,4])
+#         # save_hota_results(combined_hota, './test_data/mevid-dataset-rev2_results.json')
+
+#         failed_keys = []
+#         gt_results = load_hota_results('./test_data/mevid-dataset-rev2/results.json')
+#         for key in gt_results.keys():
+#             if not np.allclose(combined_hota.data[key], gt_results[key], atol=1e-8):
+#                 print(f"Failed on key: {key}")
+#                 print(f"  difference: {combined_hota.data[key] - gt_results[key]}")
+#                 failed_keys.append(key)
+        
+#         if len(failed_keys) > 0:
+#             raise AssertionError(f"HOTA test failed on keys: {failed_keys}")
+        
+
+
+class TestHOTA_meva_subset:
+    """Test class for HOTA metric functionality."""
+    
+    def test_compute_hota(self, tracking_data):
+        """Test the HOTA metric computation."""
+        ref_dfs, comp_dfs = tracking_data
+
+        # Compute HOTA
+        # combined_hota, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, output_dir='./hota_plots', id_alignment_method='per_frame', similarity_metric='iou')
+        # combined_hota, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, output_dir='./hota_plots', id_alignment_method='per_video', similarity_metric='iou')
+        # combined_hota, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, output_dir='./hota_plots', id_alignment_method='global', similarity_metric='iou')
+        combined_hota, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, id_alignment_method='global', similarity_metric='iou')
+
+        # combined_hota, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, output_dir='./hota_plots', similarity_metric='iou', gids=[1,3])
+        # combined_hota, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, output_dir='./hota_plots', id_alignment_method='global', similarity_metric='iou', class_ids=[2, 3])
+
+        # save_hota_results(combined_hota, './test_data/mevid-dataset-rev2_results_subset.json')
+        # for video_id, video_data in per_video_hota_data.items():
+        #     save_hota_results(video_data, f'./test_data/mevid-dataset-rev2_results_subset_per_video_{video_id}.json')
+
+        # print("combined IDF1:")
+        # print(combined_hota.data['IDF1'])
+        # print("combined HOTA:")
+        # print(combined_hota.data['HOTA'])
+        # print("combined HOTA data keys:")
+        # for key in combined_hota.data.keys():
+        #     print(f"{key}: {combined_hota.data[key]}")
+
+        print("combined HOTA data keys (at 0.5):")
+        idx = np.where(HOTA_DATA.array_labels == 0.5)[0][0]
+        for key in combined_hota.data.keys():
+            if 'counts' not in key:
+                print(f"{key}: {combined_hota.data[key][idx]}")
+
+        failed_keys = []
+        gt_results = load_hota_results(os.path.join(os.path.dirname(__file__), 'data', 'mevid-dataset-rev2', 'results_subset.json'))
+        for key in gt_results.keys():
+            if not np.allclose(combined_hota.data[key], gt_results[key], atol=1e-8):
+                print(f"Failed on key: {key}")
+                print(f"  difference: {combined_hota.data[key] - gt_results[key]}")
+                failed_keys.append(key)
+        
+        if len(failed_keys) > 0:
+            raise AssertionError(f"HOTA test failed on keys: {failed_keys}")
+        
+
+
+
+    
+    
+
+    
+
+    
+
+
+
+
