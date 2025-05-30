@@ -79,7 +79,7 @@ class HOTA_DATA:
 
     def get_dict(self) -> dict:
         return {
-            'IOU Threshold': HOTA_DATA.array_labels,
+            'IOU Thresholds': HOTA_DATA.array_labels,
             'video_id': self.video_id,
             'frame': self.frame,
             'TP': self.data['TP'],

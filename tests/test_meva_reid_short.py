@@ -16,21 +16,23 @@ def setup_multiprocessing():
 # Add the src directory to Python path to import local reid_hota
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from reid_hota import fast_hota as fh
-from reid_hota import HOTA_DATA
+# from reid_hota import fast_hota as fh
+
+from reid_hota import HOTA_DATA, HOTAReIDEvaluator
+from test_utils import validate_results, save_hota_results
 
 
 
 @pytest.fixture
 def tracking_data() -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
     """Pytest fixture that creates tracking data for testing."""
-    gt_fp = os.path.join(os.path.dirname(__file__), 'data', 'mevid-dataset-rev2', 'gt')
-    pred_fp = os.path.join(os.path.dirname(__file__), 'data', 'mevid-dataset-rev2', 'mit-ll')
+    gt_fp = os.path.join(os.path.dirname(__file__), 'data', 'meva_rid_short', 'ref')
+    pred_fp = os.path.join(os.path.dirname(__file__), 'data', 'meva_rid_short', 'comp')
 
     fns = [fn for fn in os.listdir(gt_fp) if fn.endswith('.csv')]
     ref_dfs = {}
     comp_dfs = {}
-    for fn in fns[:15]:
+    for fn in fns:
         gt_df = pd.read_csv(os.path.join(gt_fp, fn))
         pred_df = pd.read_csv(os.path.join(pred_fp, fn))
 
@@ -122,94 +124,60 @@ def tracking_data() -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
 
 
 
-        
-
-def save_hota_results(combined_hota, fp):
-    # Create a serializable dictionary from the combined_hota data
-    hota_data_dict = {}
-    for key in ['TP','FP','FN','LocA','HOTA','AssA', 'AssRe', 'AssPr', 'DetA', 'DetRe', 'DetPr', 'OWTA']:
-        # Convert numpy arrays to lists for JSON serialization
-        val = combined_hota.data[key]
-        if isinstance(val, np.ndarray):
-            val = val.tolist()
-        else:
-            raise ValueError(f"Unexpected type: {type(val)}")
-        hota_data_dict[key] = val
-    
-    # Save to JSON file
-    assert fp.endswith('.json'), f"File must have a .json extension, got {fp}"
-    with open(fp, 'w') as f:
-        json.dump(hota_data_dict, f, indent=2)
-
-def load_hota_results(fp):
-    assert fp.endswith('.json'), f"File must have a .json extension, got {fp}"
-    with open(fp, 'r') as f:
-        hota_data_dict = json.load(f)
-    return hota_data_dict
+       
 
 
-# class TestHOTA_meva:
-#     """Test class for HOTA metric functionality."""
-    
-#     def test_compute_hota(self, tracking_data):
-#         """Test the HOTA metric computation."""
-#         ref_dfs, comp_dfs = tracking_data
-
-#         # Compute HOTA
-#         combined_hota, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, output_dir='./hota_plots')#'./hota_plots')#, gids=[1,3,4])
-#         # save_hota_results(combined_hota, './test_data/mevid-dataset-rev2_results.json')
-
-#         failed_keys = []
-#         gt_results = load_hota_results('./test_data/mevid-dataset-rev2/results.json')
-#         for key in gt_results.keys():
-#             if not np.allclose(combined_hota.data[key], gt_results[key], atol=1e-8):
-#                 print(f"Failed on key: {key}")
-#                 print(f"  difference: {combined_hota.data[key] - gt_results[key]}")
-#                 failed_keys.append(key)
-        
-#         if len(failed_keys) > 0:
-#             raise AssertionError(f"HOTA test failed on keys: {failed_keys}")
         
 
 
-class TestHOTA_meva_subset:
+class TestHOTA_meva_reid_short_global_id_alignment:
     """Test class for HOTA metric functionality."""
     
     def test_compute_hota(self, tracking_data):
         """Test the HOTA metric computation."""
         ref_dfs, comp_dfs = tracking_data
 
-        # Compute HOTA
-        # global_hota_data, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, output_dir='./hota_plots', id_alignment_method='per_frame', similarity_metric='iou')
-        # global_hota_data, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, output_dir='./hota_plots', id_alignment_method='per_video', similarity_metric='iou')
-        # global_hota_data, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, output_dir='./hota_plots', id_alignment_method='global', similarity_metric='iou')
-        # global_hota_data, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, id_alignment_method='global', similarity_metric='iou')
-
-        evaluator = fh.HOTAReIDEvaluator(n_workers=40, id_alignment_method='global', similarity_metric='iou')
+        evaluator = HOTAReIDEvaluator(n_workers=40, id_alignment_method='global', similarity_metric='iou')
         evaluator.evaluate(ref_dfs, comp_dfs)
         global_hota_data = evaluator.get_global_hota_data()
-        # per_video_hota_data = evaluator.get_per_video_hota_data()
-        # per_frame_hota_data = evaluator.get_per_frame_hota_data()
 
-        evaluator.export_to_file('./hota_plots')
-
-
-        print("combined HOTA data keys (at 0.5):")
-        idx = np.where(HOTA_DATA.array_labels == 0.5)[0][0]
-        for key in global_hota_data.data.keys():
-            if 'counts' not in key:
-                print(f"{key}: {global_hota_data.data[key][idx]}")
-
-        failed_keys = []
-        gt_results = load_hota_results(os.path.join(os.path.dirname(__file__), 'data', 'mevid-dataset-rev2', 'results_subset.json'))
-        for key in gt_results.keys():
-            if not np.allclose(global_hota_data.data[key], gt_results[key], atol=1e-8):
-                print(f"Failed on key: {key}")
-                print(f"  difference: {global_hota_data.data[key] - gt_results[key]}")
-                failed_keys.append(key)
         
-        if len(failed_keys) > 0:
-            raise AssertionError(f"HOTA test failed on keys: {failed_keys}")
+        gt_fp = os.path.join(os.path.dirname(__file__), 'data', 'meva_rid_short', 'results_global_id_alignment.json')
+        validate_results(global_hota_data, gt_fp)  # raises AssertionError if any keys fail
+
+        
+
+
+class TestHOTA_meva_reid_short_video_id_alignment:
+    """Test class for HOTA metric functionality."""
+    
+    def test_compute_hota(self, tracking_data):
+        """Test the HOTA metric computation."""
+        ref_dfs, comp_dfs = tracking_data
+
+        evaluator = HOTAReIDEvaluator(n_workers=40, id_alignment_method='per_video', similarity_metric='iou')
+        evaluator.evaluate(ref_dfs, comp_dfs)
+        global_hota_data = evaluator.get_global_hota_data()
+
+        gt_fp = os.path.join(os.path.dirname(__file__), 'data', 'meva_rid_short', 'results_video_id_alignment.json')
+        validate_results(global_hota_data, gt_fp)  # raises AssertionError if any keys fail
+        
+
+class TestHOTA_meva_reid_short_frame_id_alignment:
+    """Test class for HOTA metric functionality."""
+    
+    def test_compute_hota(self, tracking_data):
+        """Test the HOTA metric computation."""
+        ref_dfs, comp_dfs = tracking_data
+
+
+        evaluator = HOTAReIDEvaluator(n_workers=40, id_alignment_method='per_frame', similarity_metric='iou')
+        evaluator.evaluate(ref_dfs, comp_dfs)
+        global_hota_data = evaluator.get_global_hota_data()
+        # evaluator.export_to_file('./hota_plots')
+
+        gt_fp = os.path.join(os.path.dirname(__file__), 'data', 'meva_rid_short', 'results_frame_id_alignment.json')
+        validate_results(global_hota_data, gt_fp)  # raises AssertionError if any keys fail
         
 
 

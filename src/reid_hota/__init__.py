@@ -6,14 +6,14 @@ A fast, parallel implementation of HOTA metrics for re-identification and tracki
 
 __version__ = "0.1.0"
 
-from .fast_hota import compute_hota
+from .fast_hota import HOTAReIDEvaluator
 from .hota_data import HOTA_DATA, VideoFrameData, FrameExtractionInputData
 from .fast_hota_utils import merge_hota_data, jaccard_cost_matrices
 from .cost_matrix import CostMatrixData
 from .sparse_matrix import Sparse2DMatrix, Sparse1DMatrix
 
 __all__ = [
-    "compute_hota",
+    "HOTAReIDEvaluator",
     "HOTA_DATA", 
     "CostMatrixData",
     "VideoFrameData",

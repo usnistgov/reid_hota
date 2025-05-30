@@ -20,3 +20,6 @@ path = "src/reid_hota/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/reid_hota"]
+
+[tool.pytest.ini_options]
+addopts = ["-s"]
