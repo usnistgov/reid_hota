@@ -6,6 +6,8 @@ __pycache__/
 tests/data/meva_rid_long
 hota_plots/
 
+examples/eval_codetr.py
+
 
 # # Distribution / packaging
 # .Python

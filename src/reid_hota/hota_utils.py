@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import copy
-from numpy.typing import NDArray
 from multiprocessing import Pool
 
 

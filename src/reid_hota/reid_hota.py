@@ -3,11 +3,8 @@ import numpy as np
 import pandas as pd
 import time
 from multiprocessing import Pool
-# from typing import Optional
-# from numpy.typing import NDArray
-# from dataclasses import dataclass, field
 
-from .fast_hota_utils import compute_cost_per_video_per_frame, jaccard_cost_matrices, build_HOTA_objects, merge_hota_data, jaccard_cost_matrices_parallel
+from .hota_utils import compute_cost_per_video_per_frame, jaccard_cost_matrices, build_HOTA_objects, merge_hota_data, jaccard_cost_matrices_parallel
 from .config import HOTAConfig
 
 

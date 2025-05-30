@@ -1,9 +1,7 @@
 import numpy as np
 import pandas as pd
-from dataclasses import dataclass, field
-from numpy.typing import NDArray
-from typing import Optional, Union, Any
-from enum import Enum
+from dataclasses import dataclass
+from typing import Optional
 
 from .cost_matrix import CostMatrixData, CostMatrixDataFrame
 from .sparse_matrix import Sparse2DMatrix, Sparse1DMatrix
