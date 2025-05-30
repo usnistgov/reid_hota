@@ -1,19 +1,21 @@
 import numpy as np
 import pandas as pd
 import copy
-
+from numpy.typing import NDArray
 from multiprocessing import Pool
+
 
 # Suppress the SettingWithCopyWarning
 pd.options.mode.chained_assignment = None
 
 from .cost_matrix import CostMatrixData, CostMatrixDataFrame
 from .hota_data import VideoFrameData, FrameExtractionInputData, HOTAData
+from .config import HOTAConfig
 
 
 def merge_hota_data(hota_data_list: list[HOTAData]) -> HOTAData:
     if len(hota_data_list) == 0:
-        return HOTAData(None, None, None) ## create empty placeholder
+        return HOTAData() ## create empty placeholder
     # composite together the HOTA_DATAs into a single HOTA_DATA
     global_hota_data = copy.deepcopy(hota_data_list[0])
     global_hota_data.frame = None
@@ -204,9 +206,9 @@ def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str 
     return CostMatrixDataFrame(i_ids=ref_ids, j_ids=comp_ids, i_hashes=ref_hashes, j_hashes=comp_hashes, cost_matrix=cost_matrix, video_id=dat.video_id, frame=dat.frame)
 
 
-def build_HOTA_objects(sim_cost_matrix_list: list[CostMatrixData], gt_to_tracker_id_map: dict[int, int], gids: list[int] = None) -> list[HOTAData]:
+def build_HOTA_objects(sim_cost_matrix_list: list[CostMatrixData], gt_to_tracker_id_map: dict[int, int], config: HOTAConfig) -> list[HOTAData]:
     # if gt_to_tracker_id_map is None, then we use per-frame id alignment
-    dat_list = [HOTAData(sim_cost_matrix, gt_to_tracker_id_map, gids) for sim_cost_matrix in sim_cost_matrix_list]
+    dat_list = [HOTAData(sim_cost_matrix, gt_to_tracker_id_map, config) for sim_cost_matrix in sim_cost_matrix_list]
     return dat_list
 
 

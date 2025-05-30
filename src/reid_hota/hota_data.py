@@ -5,8 +5,9 @@ from numpy.typing import NDArray
 from typing import Optional, Union, Any
 from enum import Enum
 
-from .cost_matrix import CostMatrixData
+from .cost_matrix import CostMatrixData, CostMatrixDataFrame
 from .sparse_matrix import Sparse2DMatrix, Sparse1DMatrix
+from .config import HOTAConfig
 
 
 @dataclass
@@ -24,12 +25,7 @@ class VideoFrameData:
     frame: int  # the video frame number
     col_names: list[str]
 
-
-@dataclass
-class HOTAConfig:
-    """Configuration for HOTA calculation"""
-    iou_thresholds: NDArray[np.float64] = field(default_factory=lambda: np.arange(0.1, 0.99, 0.1))
-    purge_non_matched_comp_ids: bool = False
+    
 
 @dataclass
 class HOTAMetrics:
@@ -68,22 +64,23 @@ class HOTAData:
     """
 
     def __init__(self, 
-                 sim_cost_matrix: CostMatrixData, 
+                 sim_cost_matrix: Optional[CostMatrixData] = None, 
                  gt_to_tracker_id_map: Optional[dict[np.dtype[np.object_], np.dtype[np.object_]]] = None, 
-                 config: Optional[HOTAConfig] = None, 
-                 gids: Optional[list[np.dtype[np.object_]]] = None):
+                 config: HOTAConfig = HOTAConfig()):
         """
         Initialize HOTAData instance.
         
         Args:
             sim_cost_matrix: The cost matrix for this frame.
             gt_to_tracker_id_map: A map from ground truth ids to tracker ids.
-            config: Configuration for HOTA calculation
+            iou_thresholds: Set of IoU thresholds to compute metrics for.
+            purge_non_matched_comp_ids: Whether to purge non-matched comparison ids to reduce FP counts from video data that does not have full dense annotations of all objects
             gids: The ground truth ids to use for the HOTA metric. If provided, all other ids are ignored.
         """
-        
-        self.config = config or HOTAConfig()
-        self.iou_thresholds = self.config.iou_thresholds
+
+        self.purge_non_matched_comp_ids = config.purge_non_matched_comp_ids
+        self.iou_thresholds = config.iou_thresholds
+        self.gids = config.gids
 
         # sim_cost_matrix is the cost matrix just for this single frame.
         # if gt_to_tracker_id_map is None, then we use per-frame id alignment
@@ -119,7 +116,7 @@ class HOTAData:
         if sim_cost_matrix is not None:
             self.video_id = sim_cost_matrix.video_id
             self.frame = sim_cost_matrix.frame
-            self._populate(sim_cost_matrix, gt_to_tracker_id_map, gids)
+            self._populate(sim_cost_matrix, gt_to_tracker_id_map)
         else:
             raise ValueError("sim_cost_matrix is required")
 
@@ -227,67 +224,75 @@ class HOTAData:
             self.sparse_data[key] = [set() for _ in range(len(self.iou_thresholds))]
         self.sparse_data[key][iou_threshold].update(hashes)
 
-    def _populate(self, sim_cost_matrix: CostMatrixData, 
-                  gt_to_tracker_id_map: dict[np.dtype[np.object_], np.dtype[np.object_]], 
-                  gids: list[np.dtype[np.object_]] = None):
-        
-        lcl_ref_ids = sim_cost_matrix.i_ids
-        lcl_comp_ids = sim_cost_matrix.j_ids
-
-        if gt_to_tracker_id_map is None:
-            frame_cost_matrix = sim_cost_matrix.copy()
-            frame_cost_matrix.construct_assignment()
-            frame_cost_matrix.construct_id2idx_lookup()
-            gt_to_tracker_id_map = frame_cost_matrix.ref2comp_id_map
-
+    def _create_per_frame_id_mapping(self, sim_cost_matrix: CostMatrixData) -> dict:
+        """Create ID mapping using Hungarian algorithm on the cost matrix."""
+        frame_cost_matrix = sim_cost_matrix.copy()
+        frame_cost_matrix.construct_assignment()
+        frame_cost_matrix.construct_id2idx_lookup()
+        return frame_cost_matrix.ref2comp_id_map
+    
+    def _extract_frame_matches(self, lcl_ref_ids: np.ndarray, lcl_comp_ids: np.ndarray, 
+                          gt_to_tracker_id_map: dict) -> tuple[np.ndarray, np.ndarray]:
+        """Extract matched ID pairs that exist in both the global mapping and current frame."""
         if len(lcl_ref_ids) == 0 or len(lcl_comp_ids) == 0:
-            match_ref_ids, match_comp_ids = [], []
-        else:
-            comp_ids_set = set(lcl_comp_ids)
-
-            # Extract matches relevant to this frame
-            frame_matches_id = []
-            for gt_id in lcl_ref_ids:
-                if gt_id in gt_to_tracker_id_map:
-                    matched_tracker_id = gt_to_tracker_id_map[gt_id]
-                    if matched_tracker_id in comp_ids_set:
-                        frame_matches_id.append((gt_id, matched_tracker_id))
-
-            if frame_matches_id:
-                match_ref_ids, match_comp_ids = zip(*frame_matches_id)
-            else:
-                match_ref_ids, match_comp_ids = [], []
-
-        # Convert to numpy arrays
-        match_ref_ids = np.array(match_ref_ids, dtype=np.object_)
-        match_comp_ids = np.array(match_comp_ids, dtype=np.object_)
-
-        if gids is not None and len(gids) > 0:
-            mask = np.isin(match_ref_ids, gids)
-            removed_ref_ids = match_ref_ids[np.invert(mask)]
-            removed_comp_ids = match_comp_ids[np.invert(mask)]
-            match_ref_ids = match_ref_ids[mask]
-            match_comp_ids = match_comp_ids[mask]
-
-            # remove removed_ref_ids from lcl_ref_ids
-            lcl_ref_ids = np.setdiff1d(lcl_ref_ids, removed_ref_ids)
-            # remove removed_comp_ids from lcl_comp_ids
-            lcl_comp_ids = np.setdiff1d(lcl_comp_ids, removed_comp_ids)
-
-        purge_non_matched_comp_ids_flag = False # TODO find a way to make this a parameter
-        if purge_non_matched_comp_ids_flag:
-            valid_comp_ids = list(gt_to_tracker_id_map.values())
-            lcl_comp_ids = lcl_comp_ids[np.isin(lcl_comp_ids, valid_comp_ids)]
-            match_comp_ids = match_comp_ids[np.isin(match_comp_ids, valid_comp_ids)]
-
-        matched_similarity_vals = np.array([sim_cost_matrix.get_cost(i, j) for i, j in zip(match_ref_ids, match_comp_ids)])
-
-        # Calculate the total number of dets for each gt_id and tracker_id.
-        for ref_id in lcl_ref_ids:
-            self.sparse_data['ref_id_counts'].add_at(ref_id, 1)
-        for comp_id in lcl_comp_ids:
-            self.sparse_data['comp_id_counts'].add_at(comp_id, 1)
+            return np.array([], dtype=np.object_), np.array([], dtype=np.object_)
         
+        comp_ids_set = set(lcl_comp_ids)
+        frame_matches_id = []
+        
+        # Extract matches relevant to this frame
+        for gt_id in lcl_ref_ids:
+            if gt_id in gt_to_tracker_id_map:
+                matched_tracker_id = gt_to_tracker_id_map[gt_id]
+                if matched_tracker_id in comp_ids_set:
+                    frame_matches_id.append((gt_id, matched_tracker_id))
+        
+        if frame_matches_id:
+            match_ref_ids, match_comp_ids = zip(*frame_matches_id)
+            return np.array(match_ref_ids, dtype=np.object_), np.array(match_comp_ids, dtype=np.object_)
+        else:
+            return np.array([], dtype=np.object_), np.array([], dtype=np.object_)
+        
+    def _filter_by_ground_truth_ids(self, lcl_ref_ids: np.ndarray, lcl_comp_ids: np.ndarray,
+                                match_ref_ids: np.ndarray, match_comp_ids: np.ndarray, 
+                                gids: list) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Filter all IDs to only include specified ground truth IDs and their matches."""
+        # Filter matches to only include specified ground truth IDs
+        mask = np.isin(match_ref_ids, gids)
+        removed_ref_ids = match_ref_ids[np.invert(mask)]
+        removed_comp_ids = match_comp_ids[np.invert(mask)]
+        
+        filtered_match_ref_ids = match_ref_ids[mask]
+        filtered_match_comp_ids = match_comp_ids[mask]
+        
+        # Remove filtered IDs from local ID lists
+        filtered_lcl_ref_ids = np.setdiff1d(lcl_ref_ids, removed_ref_ids)
+        filtered_lcl_comp_ids = np.setdiff1d(lcl_comp_ids, removed_comp_ids)
+        
+        return filtered_lcl_ref_ids, filtered_lcl_comp_ids, filtered_match_ref_ids, filtered_match_comp_ids
+    
+    def _apply_comp_id_filtering(self, lcl_comp_ids: np.ndarray, match_comp_ids: np.ndarray,
+                            gt_to_tracker_id_map: dict) -> tuple[np.ndarray, np.ndarray]:
+        """Optionally filter comparison IDs to only include those with ground truth matches."""
+        
+        
+        valid_comp_ids = list(gt_to_tracker_id_map.values())
+        filtered_lcl_comp_ids = lcl_comp_ids[np.isin(lcl_comp_ids, valid_comp_ids)]
+        filtered_match_comp_ids = match_comp_ids[np.isin(match_comp_ids, valid_comp_ids)]
+        return filtered_lcl_comp_ids, filtered_match_comp_ids
+        
+    
+    def _get_matched_similarities(self, sim_cost_matrix: CostMatrixData, 
+                             match_ref_ids: np.ndarray, match_comp_ids: np.ndarray) -> np.ndarray:
+        """Extract similarity values for matched ID pairs and validate them."""
+        if len(match_ref_ids) == 0:
+            return np.array([])
+        
+        matched_similarity_vals = np.array([
+            sim_cost_matrix.get_cost(i, j) for i, j in zip(match_ref_ids, match_comp_ids)
+        ])
+        
+        # Validate similarity values are finite
         if np.any(~np.isfinite(matched_similarity_vals)):
             print(f"Non-finite value in matched_similarity_vals for video {sim_cost_matrix.video_id} frame {sim_cost_matrix.frame}")
             print(f"sim_cost_matrix.i_ids: {sim_cost_matrix.i_ids}")
@@ -295,6 +300,45 @@ class HOTAData:
             print(f"sim_cost_matrix.cost_matrix: {sim_cost_matrix.cost_matrix}")
             raise ValueError("Non-finite value in matched_similarity_vals")
         
+        return matched_similarity_vals
+
+    def _populate(self, sim_cost_matrix: CostMatrixData, 
+                  gt_to_tracker_id_map: dict[np.dtype[np.object_], np.dtype[np.object_]]):
+        
+        # Step 1: Extract reference (ground truth) and comparison (tracker) IDs from this frame
+        lcl_ref_ids = sim_cost_matrix.i_ids
+        lcl_comp_ids = sim_cost_matrix.j_ids
+        
+        # Step 2: Establish ID mapping between ground truth and tracker
+        if gt_to_tracker_id_map is None:
+            # If no global mapping provided, create frame-level mapping using Hungarian algorithm
+            gt_to_tracker_id_map = self._create_per_frame_id_mapping(sim_cost_matrix)
+
+        # Step 3: Find matches between reference and comparison IDs for this frame
+        match_ref_ids, match_comp_ids = self._extract_frame_matches(lcl_ref_ids, lcl_comp_ids, gt_to_tracker_id_map)
+
+        # Step 4: Apply ground truth ID filtering if specified
+        if self.gids is not None and len(self.gids) > 0:
+            lcl_ref_ids, lcl_comp_ids, match_ref_ids, match_comp_ids = self._filter_by_ground_truth_ids(
+                lcl_ref_ids, lcl_comp_ids, match_ref_ids, match_comp_ids, self.gids
+            )
+
+        # Step 5: Optional filtering of non-matched comparison IDs
+        # This removes tracker IDs that don't have corresponding ground truth matches, reducing FP counts from video data that does not have full dense annotations of all objects
+        if self.purge_non_matched_comp_ids:
+            lcl_comp_ids, match_comp_ids = self._apply_comp_id_filtering(lcl_comp_ids, match_comp_ids, gt_to_tracker_id_map)
+
+        # Step 6: Extract similarity values for the matched pairs
+        matched_similarity_vals = self._get_matched_similarities(sim_cost_matrix, match_ref_ids, match_comp_ids)
+
+        # Step 7: Update detection counts for association metric computation
+        # Calculate the total number of dets for each gt_id and tracker_id.
+        for ref_id in lcl_ref_ids:
+            self.sparse_data['ref_id_counts'].add_at(ref_id, 1)
+        for comp_id in lcl_comp_ids:
+            self.sparse_data['comp_id_counts'].add_at(comp_id, 1)
+        
+        # Step 8: Compute metrics across all IoU thresholds
         # Calculate and accumulate basic statistics
         for a, alpha in enumerate(self.iou_thresholds):
             actually_matched_mask = matched_similarity_vals >= alpha - np.finfo('float').eps
@@ -312,7 +356,7 @@ class HOTAData:
             matched_comp_indices_mask = np.zeros(len(sim_cost_matrix.j_ids), dtype=bool)
             matched_comp_indices_mask[np.isin(sim_cost_matrix.j_ids, alpha_match_comp_ids)] = True
 
-            if sim_cost_matrix.i_hashes is not None and sim_cost_matrix.j_hashes is not None:
+            if isinstance(sim_cost_matrix, CostMatrixDataFrame) and sim_cost_matrix.i_hashes is not None and sim_cost_matrix.j_hashes is not None:
                 matched_ref_hashes = sim_cost_matrix.i_hashes[matched_ref_indices_mask]
                 matched_comp_hashes = sim_cost_matrix.j_hashes[matched_comp_indices_mask]
                 non_matched_ref_hashes = sim_cost_matrix.i_hashes[np.invert(matched_ref_indices_mask)]

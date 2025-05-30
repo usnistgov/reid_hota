@@ -16,7 +16,7 @@ def setup_multiprocessing():
 # Add the src directory to Python path to import local reid_hota
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from reid_hota import HOTAReIDEvaluator
+from reid_hota import HOTAReIDEvaluator, HOTAConfig
 from test_utils import validate_results
 
 
@@ -135,7 +135,8 @@ class TestHOTA_meva_reid_short_global_id_alignment:
         """Test the HOTA metric computation."""
         ref_dfs, comp_dfs = tracking_data
 
-        evaluator = HOTAReIDEvaluator(n_workers=40, id_alignment_method='global', similarity_metric='iou')
+        config = HOTAConfig(id_alignment_method='global', similarity_metric='iou')
+        evaluator = HOTAReIDEvaluator(n_workers=20, config=config)
         evaluator.evaluate(ref_dfs, comp_dfs)
         global_hota_data = evaluator.get_global_hota_data()
 
@@ -153,7 +154,8 @@ class TestHOTA_meva_reid_short_global_id_alignment:
 #         """Test the HOTA metric computation."""
 #         ref_dfs, comp_dfs = tracking_data
 
-#         evaluator = HOTAReIDEvaluator(n_workers=40, id_alignment_method='per_video', similarity_metric='iou')
+#         config = HOTAConfig(id_alignment_method='per_video', similarity_metric='iou')
+#         evaluator = HOTAReIDEvaluator(n_workers=20, config=config)
 #         evaluator.evaluate(ref_dfs, comp_dfs)
 #         global_hota_data = evaluator.get_global_hota_data()
 
@@ -169,7 +171,8 @@ class TestHOTA_meva_reid_short_global_id_alignment:
 #         ref_dfs, comp_dfs = tracking_data
 
 
-#         evaluator = HOTAReIDEvaluator(n_workers=40, id_alignment_method='per_frame', similarity_metric='iou')
+#         config = HOTAConfig(id_alignment_method='per_frame', similarity_metric='iou')
+#         evaluator = HOTAReIDEvaluator(n_workers=20, config=config)
 #         evaluator.evaluate(ref_dfs, comp_dfs)
 #         global_hota_data = evaluator.get_global_hota_data()
 #         # evaluator.export_to_file('./hota_plots')

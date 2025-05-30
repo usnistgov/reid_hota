@@ -6,8 +6,8 @@ import pandas as pd
 # Add the src directory to Python path to import local reid_hota
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from reid_hota import fast_hota as fh
-from reid_hota import HOTAData
+
+from reid_hota import HOTAReIDEvaluator, HOTAConfig
 
 
 
@@ -128,7 +128,8 @@ def test_hota_meva_subset(ref_dfs, comp_dfs):
     # global_hota_data, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, output_dir='./hota_plots', id_alignment_method='global', similarity_metric='iou')
     # global_hota_data, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, id_alignment_method='global', similarity_metric='iou')
 
-    evaluator = fh.HOTAReIDEvaluator(n_workers=40, id_alignment_method='global', similarity_metric='iou')
+    config = HOTAConfig(id_alignment_method='global', similarity_metric='iou')
+    evaluator = HOTAReIDEvaluator(n_workers=0, config=config)
     evaluator.evaluate(ref_dfs, comp_dfs)
     global_hota_data = evaluator.get_global_hota_data()
     # per_video_hota_data = evaluator.get_per_video_hota_data()
