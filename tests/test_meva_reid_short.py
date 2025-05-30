@@ -16,10 +16,8 @@ def setup_multiprocessing():
 # Add the src directory to Python path to import local reid_hota
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-# from reid_hota import fast_hota as fh
-
-from reid_hota import HOTA_DATA, HOTAReIDEvaluator
-from test_utils import validate_results, save_hota_results
+from reid_hota import HOTAReIDEvaluator
+from test_utils import validate_results
 
 
 

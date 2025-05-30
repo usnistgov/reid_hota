@@ -16,10 +16,9 @@ def setup_multiprocessing():
 # Add the src directory to Python path to import local reid_hota
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-# from reid_hota import fast_hota as fh
 
-from reid_hota import HOTA_DATA, HOTAReIDEvaluator
-from test_utils import save_hota_results, load_hota_results, validate_results
+from reid_hota import HOTAReIDEvaluator
+from test_utils import validate_results
 
 
 
@@ -61,28 +60,6 @@ def tracking_data() -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
 
         gt_df['alt'] = np.random.rand(len(gt_df)) * 10
         pred_df['alt'] = np.random.rand(len(pred_df)) * 10
-
-        # Create a new random box for each frame
-        # Create new rows for each frame this tests the FP purge
-        # new_rows = []
-        # for frame_id in gt_df['frame_id'].unique():
-        #     new_row = {
-        #         'frame_id': frame_id,
-        #         'object_id': int(np.random.rand() * 100000) + 100000,
-        #         'x': np.random.rand() * 1920,  # Random x coordinate
-        #         'y': np.random.rand() * 1080,  # Random y coordinate
-        #         'w': np.random.rand() * 100 + 50,  # Random width between 50-150
-        #         'h': np.random.rand() * 100 + 50,  # Random height between 50-150
-        #         'class_id': 1, 
-        #         'lat': np.random.rand() * 10,
-        #         'lon': np.random.rand() * 10,
-        #         'alt': np.random.rand() * 10
-        #     }
-        #     new_rows.append(new_row)
-        
-        # # Add all new rows at once to both dataframes
-        # new_df = pd.DataFrame(new_rows)
-        # pred_df = pd.concat([pred_df, new_df], ignore_index=True)
 
         # hash(f"frame_id:{frame_id} object_id:{object_id} x:{x} y:{y} w:{w} h:{h} class_id:{class_id} lat:{lat} lon:{lon} alt:{alt}")
         pred_df['box_hash'] = pred_df.apply(lambda row: str(hash(f"frame_id:{row['frame_id']} object_id:{row['object_id']} x:{row['x']} y:{row['y']} w:{row['w']} h:{row['h']} class_id:{row['class_id']} lat:{row['lat']} lon:{row['lon']} alt:{row['alt']}")), axis=1)
@@ -142,7 +119,6 @@ class TestHOTA_meva_full_global_id_alignment:
         evaluator = HOTAReIDEvaluator(n_workers=40, id_alignment_method='global', similarity_metric='iou')
         evaluator.evaluate(ref_dfs, comp_dfs)
         global_hota_data = evaluator.get_global_hota_data()
-        save_hota_results(global_hota_data, os.path.join(os.path.dirname(__file__), 'data', 'meva_rid_long', 'results_global_id_alignment.json'))
     
         gt_fp = os.path.join(os.path.dirname(__file__), 'data', 'meva_rid_long', 'results_global_id_alignment.json')
         validate_results(global_hota_data, gt_fp)  # raises AssertionError if any keys fail
@@ -160,7 +136,6 @@ class TestHOTA_meva_full_video_id_alignment:
         evaluator = HOTAReIDEvaluator(n_workers=40, id_alignment_method='per_video', similarity_metric='iou')
         evaluator.evaluate(ref_dfs, comp_dfs)
         global_hota_data = evaluator.get_global_hota_data()
-        save_hota_results(global_hota_data, os.path.join(os.path.dirname(__file__), 'data', 'meva_rid_long', 'results_video_id_alignment.json'))
 
 
         gt_fp = os.path.join(os.path.dirname(__file__), 'data', 'meva_rid_long', 'results_video_id_alignment.json')
@@ -179,8 +154,6 @@ class TestHOTA_meva_full_frame_id_alignment:
         evaluator = HOTAReIDEvaluator(n_workers=40, id_alignment_method='per_frame', similarity_metric='iou')
         evaluator.evaluate(ref_dfs, comp_dfs)
         global_hota_data = evaluator.get_global_hota_data()
-        save_hota_results(global_hota_data, os.path.join(os.path.dirname(__file__), 'data', 'meva_rid_long', 'results_frame_id_alignment.json'))
-        # evaluator.export_to_file('./hota_plots')
 
         gt_fp = os.path.join(os.path.dirname(__file__), 'data', 'meva_rid_long', 'results_frame_id_alignment.json')
         validate_results(global_hota_data, gt_fp)  # raises AssertionError if any keys fail
