@@ -7,7 +7,7 @@ import pandas as pd
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from reid_hota import fast_hota as fh
-from reid_hota import HOTA_DATA
+from reid_hota import HOTAData
 
 
 
@@ -138,7 +138,7 @@ def test_hota_meva_subset(ref_dfs, comp_dfs):
 
 
     print("combined HOTA data keys (at 0.5):")
-    idx = np.where(HOTA_DATA.array_labels == 0.5)[0][0]
+    idx = np.where(global_hota_data.iou_thresholds == 0.5)[0][0]
     for key in global_hota_data.data.keys():
         if 'counts' not in key:
             print(f"{key}: {global_hota_data.data[key][idx]}")

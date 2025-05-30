@@ -49,8 +49,7 @@ class HOTAReIDEvaluator:
             class_ids: list[np.dtype[np.object_]] = None, 
             gids: list[np.dtype[np.object_]] = None, 
             id_alignment_method: str = 'global', 
-            similarity_metric: str = 'iou', 
-            restrict_box_hashes_to_per_frame: bool = True):
+            similarity_metric: str = 'iou'):
         """
         Initialize the HOTAReIDEvaluator
         """
@@ -59,7 +58,6 @@ class HOTAReIDEvaluator:
         self.gids = gids
         self.id_alignment_method = id_alignment_method
         self.similarity_metric = similarity_metric
-        self.restrict_box_hashes_to_per_frame = restrict_box_hashes_to_per_frame
 
         assert self.id_alignment_method in self.ID_ALIGNMENT_METHODS, f"id_alignment_method must be one of: {self.ID_ALIGNMENT_METHODS}"
         assert self.similarity_metric in self.SIMILARITY_METRICS, f"similarity_metric must be one of: {self.SIMILARITY_METRICS}"
@@ -225,7 +223,7 @@ class HOTAReIDEvaluator:
                 
                 # Organize results into per-video structure
                 self.per_frame_hota_data = {res[0].video_id: res for res in video_results}
-                self.per_video_hota_data = {res[0].video_id: merge_hota_data(res, self.restrict_box_hashes_to_per_frame) for res in video_results}
+                self.per_video_hota_data = {res[0].video_id: merge_hota_data(res) for res in video_results}
         else:
             for video_id, cm_values in id_similarity_per_video.items():
                 # Process frames for this video sequentially
@@ -237,7 +235,7 @@ class HOTAReIDEvaluator:
                     frame_dat = build_HOTA_objects(cm_values, global_cost_matrix.ref2comp_id_map, self.gids)
 
                 self.per_frame_hota_data[video_id] = frame_dat
-                self.per_video_hota_data[video_id] = merge_hota_data(frame_dat, self.restrict_box_hashes_to_per_frame)
+                self.per_video_hota_data[video_id] = merge_hota_data(frame_dat)
 
         print(f"  took: {time.time() - st} seconds")
 
@@ -247,7 +245,7 @@ class HOTAReIDEvaluator:
         # ************************************
         st = time.time()
         print(f"Merging HOTA data")
-        self.global_hota_data = merge_hota_data(list(self.per_video_hota_data.values()), self.restrict_box_hashes_to_per_frame)
+        self.global_hota_data = merge_hota_data(list(self.per_video_hota_data.values()))
         self.global_hota_data.video_id = None  # remove the video_id from the global HOTA_DATA object
         print(f"  took: {time.time() - st} seconds")
 

@@ -7,13 +7,13 @@ from multiprocessing import Pool
 # Suppress the SettingWithCopyWarning
 pd.options.mode.chained_assignment = None
 
-from .cost_matrix import CostMatrixData
-from .hota_data import VideoFrameData, FrameExtractionInputData, HOTA_DATA
+from .cost_matrix import CostMatrixData, CostMatrixDataFrame
+from .hota_data import VideoFrameData, FrameExtractionInputData, HOTAData
 
 
-def merge_hota_data(hota_data_list: list[HOTA_DATA], restrict_box_hashes_to_per_frame) -> HOTA_DATA:
+def merge_hota_data(hota_data_list: list[HOTAData]) -> HOTAData:
     if len(hota_data_list) == 0:
-        return HOTA_DATA(None, None, None) ## create empty placeholder
+        return HOTAData(None, None, None) ## create empty placeholder
     # composite together the HOTA_DATAs into a single HOTA_DATA
     global_hota_data = copy.deepcopy(hota_data_list[0])
     global_hota_data.frame = None
@@ -24,24 +24,12 @@ def merge_hota_data(hota_data_list: list[HOTA_DATA], restrict_box_hashes_to_per_
         if dat.video_id is None:
             raise ValueError("video_id is None")
         global_hota_data += dat
-        if not restrict_box_hashes_to_per_frame:
-            for a in range(len(HOTA_DATA.array_labels)):
-                global_hota_data.data['TP_hashes'][a].update(dat.data['TP_hashes'][a])
-                global_hota_data.data['FN_hashes'][a].update(dat.data['FN_hashes'][a])
-                global_hota_data.data['FP_hashes'][a].update(dat.data['FP_hashes'][a])
-
+        
     global_hota_data._finalize()
-    if restrict_box_hashes_to_per_frame:
-        if 'TP_hashes' in global_hota_data.data:
-            del global_hota_data.data['TP_hashes']
-        if 'FN_hashes' in global_hota_data.data:
-            del global_hota_data.data['FN_hashes']
-        if 'FP_hashes' in global_hota_data.data:
-            del global_hota_data.data['FP_hashes']
     return global_hota_data
 
 
-def plot_hota(hota_data: HOTA_DATA, output_dir: str):
+def plot_hota(hota_data: HOTAData, output_dir: str):
     import matplotlib.pyplot as plt
     import os
     
@@ -50,7 +38,7 @@ def plot_hota(hota_data: HOTA_DATA, output_dir: str):
     del dict_data['frame']
     del dict_data['video_id']
     metrics = list(dict_data.keys())
-    x_vals = hota_data.array_labels
+    x_vals = hota_data.iou_thresholds
     
     # Plot each metric in its own subplot
     for metric_name in metrics:
@@ -107,7 +95,7 @@ def plot_per_frame_hota_data(per_frame_hota_data: pd.DataFrame, output_dir: str)
         plt.close()
         
 
-def compute_id_alignment_similarity_from_df(input_dat: FrameExtractionInputData, similarity_metric: str = 'iou') -> tuple[str, list[CostMatrixData]]:
+def compute_id_alignment_similarity_from_df(input_dat: FrameExtractionInputData, similarity_metric: str = 'iou') -> tuple[str, list[CostMatrixDataFrame]]:
     """
     Compute alignment costs between reference and comparison frames.
     """
@@ -145,7 +133,7 @@ def compute_id_alignment_similarity_from_df(input_dat: FrameExtractionInputData,
 
 
 
-def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str = 'iou') -> CostMatrixData:
+def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str = 'iou') -> CostMatrixDataFrame:
     """
     Compute alignment costs between reference and comparison frames.
     """
@@ -166,7 +154,7 @@ def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str 
             ref_hashes = None
             comp_hashes = None
         cost_matrix = np.zeros((len(ref_ids), len(comp_ids)))
-        return CostMatrixData(i_ids=ref_ids, j_ids=comp_ids, i_hashes=ref_hashes, j_hashes=comp_hashes, cost_matrix=cost_matrix, video_id=dat.video_id, frame=dat.frame)
+        return CostMatrixDataFrame(i_ids=ref_ids, j_ids=comp_ids, i_hashes=ref_hashes, j_hashes=comp_hashes, cost_matrix=cost_matrix, video_id=dat.video_id, frame=dat.frame)
     assert len(ref_frames) == 1 and len(comp_frames) == 1
     assert ref_frames[0] == comp_frames[0]
 
@@ -213,18 +201,18 @@ def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str 
     else:
         raise ValueError(f'Unsupported similarity metric: {similarity_metric}')
 
-    return CostMatrixData(i_ids=ref_ids, j_ids=comp_ids, i_hashes=ref_hashes, j_hashes=comp_hashes, cost_matrix=cost_matrix, video_id=dat.video_id, frame=dat.frame)
+    return CostMatrixDataFrame(i_ids=ref_ids, j_ids=comp_ids, i_hashes=ref_hashes, j_hashes=comp_hashes, cost_matrix=cost_matrix, video_id=dat.video_id, frame=dat.frame)
 
 
-def build_HOTA_objects(sim_cost_matrix_list: list[CostMatrixData], gt_to_tracker_id_map: dict[int, int], gids: list[int] = None) -> list[HOTA_DATA]:
+def build_HOTA_objects(sim_cost_matrix_list: list[CostMatrixData], gt_to_tracker_id_map: dict[int, int], gids: list[int] = None) -> list[HOTAData]:
     # if gt_to_tracker_id_map is None, then we use per-frame id alignment
-    dat_list = [HOTA_DATA(sim_cost_matrix, gt_to_tracker_id_map, gids) for sim_cost_matrix in sim_cost_matrix_list]
+    dat_list = [HOTAData(sim_cost_matrix, gt_to_tracker_id_map, gids) for sim_cost_matrix in sim_cost_matrix_list]
     return dat_list
 
 
 
 
-def compute_cost_per_video_per_frame(ref_dfs: dict[str, pd.DataFrame], comp_dfs: dict[str, pd.DataFrame], n_workers:int=0, similarity_metric: str = 'iou') -> dict[str, list[CostMatrixData]]:
+def compute_cost_per_video_per_frame(ref_dfs: dict[str, pd.DataFrame], comp_dfs: dict[str, pd.DataFrame], n_workers:int=0, similarity_metric: str = 'iou') -> dict[str, list[CostMatrixDataFrame]]:
 
     # ************************************
     # Convert the list[pd.DataFrame] into a list[CostMatrixData]
@@ -279,7 +267,7 @@ def jaccard_cost_matrices(matrices_list: list[CostMatrixData]) -> CostMatrixData
 
     cost_matrix = cost_sum / (i_counts[:, np.newaxis] + j_counts[np.newaxis, :] - cost_sum)
 
-    return CostMatrixData(i_ids=ref_ids, j_ids=comp_ids, i_hashes=None, j_hashes=None, cost_matrix=cost_matrix, video_id=None, frame=None)
+    return CostMatrixData(i_ids=ref_ids, j_ids=comp_ids, cost_matrix=cost_matrix, video_id=None, frame=None)
 
 
 def process_jaccard_cost_matrix_chunk(matrices_chunk: list[CostMatrixData]) -> tuple:
@@ -368,7 +356,7 @@ def jaccard_cost_matrices_parallel(matrices_dict: dict[str, list[CostMatrixData]
     # Apply Jaccard formula
     cost_matrix = cost_sum / (i_counts[:, np.newaxis] + j_counts[np.newaxis, :] - cost_sum)
     
-    return CostMatrixData(i_ids=all_i_ids, j_ids=all_j_ids, i_hashes=None, j_hashes=None, cost_matrix=cost_matrix, video_id=None, frame=None)
+    return CostMatrixData(i_ids=all_i_ids, j_ids=all_j_ids, cost_matrix=cost_matrix, video_id=None, frame=None)
 
 
 def extract_per_frame_data(input_dat: FrameExtractionInputData, class_id: np.dtype[np.object_] = None) -> list[VideoFrameData]:
