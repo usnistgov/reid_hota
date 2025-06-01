@@ -57,8 +57,6 @@ class HOTAReIDEvaluator:
             A dictionary of comparison dataframes, where the keys are the video ids and the values are the dataframes
         """
 
-        # TODO swap valiation to use pandera
-        # https://git.codev.mitre.org/projects/VLINCS/repos/vlincs-database/browse/src/vlincs/database/data/Annotation.py
         # Assert that ref_dfs is a dictionary of pandas dataframes
         assert isinstance(ref_dfs, dict), f"ref_dfs must be a dictionary, got {type(ref_dfs)}"
         for video_id, df in ref_dfs.items():
@@ -129,11 +127,11 @@ class HOTAReIDEvaluator:
                 # Construct the assignment between ids
                 video_cost_matrix.construct_assignment()
                 # create mapping from ids into the cost matrix index. This translates between the global id space and incides into the cost matrix
-                # preconstruct before copying to parallel workers, to save some time
                 video_cost_matrix.construct_id2idx_lookup()
                 per_video_cost_matrices[video_id] = video_cost_matrix
         elif self.config.id_alignment_method == 'global':
-            if self.n_workers > 1:
+            # For long data, parallel is 10s, serial is 23s
+            if False: #self.n_workers > 1:
                 global_cost_matrix = jaccard_cost_matrices_parallel(id_similarity_per_video, n_workers=self.n_workers)
             else:
                 # flatten similarity_per_video into a single 1D list to pass to jaccard_cost_matrices
@@ -148,7 +146,7 @@ class HOTAReIDEvaluator:
             # preconstruct before copying to parallel workers, to save some time
             global_cost_matrix.construct_id2idx_lookup()
         elif self.config.id_alignment_method == 'per_frame':
-            per_video_cost_matrices = dict()
+            per_video_cost_matrices = None
             global_cost_matrix = None
         
 
@@ -243,7 +241,7 @@ class HOTAReIDEvaluator:
         """
         return self.per_frame_hota_data
     
-    def export_to_file(self, output_dir: str):
+    def export_to_file(self, output_dir: str, save_per_frame: bool = True, save_per_video: bool = True):
         if self.global_hota_data is None:
             print("Warning: Global HOTA data is not available")
             return
@@ -253,46 +251,39 @@ class HOTAReIDEvaluator:
         if self.per_frame_hota_data is None:
             print("Warning: Per-frame HOTA data is not available")
             return
-        if output_dir is None:
-            print("Warning: output_dir is not available")
-            return
 
-        # TODO add an option to save only per video data, instead of per frame
-        st = time.time()
         os.makedirs(output_dir, exist_ok=True)
         
-        df_source_list = []
-        # Use the already structured per_video_hota_data instead of reconstructing it
-        for video_id, video_data in self.per_video_hota_data.items():
-            # Convert the list of HOTA_DATA for this video to a DataFrame
-            df_source_list.append(video_data.get_dict())
-        # Save the DataFrame to a parquet file in the output directory
-        df = pd.DataFrame(df_source_list)
-        output_file = os.path.join(output_dir, f'metrics_per_video.parquet')
-        df.to_parquet(output_file, index=False)
-        # df.to_csv(output_file.replace('.parquet', '.csv'), index=False)
+        if save_per_video:
+            df_source_list = []
+            # Use the already structured per_video_hota_data instead of reconstructing it
+            for video_id, video_data in self.per_video_hota_data.items():
+                # Convert the list of HOTA_DATA for this video to a DataFrame
+                df_source_list.append(video_data.get_dict())
+            # Save the DataFrame to a parquet file in the output directory
+            df = pd.DataFrame(df_source_list)
+            output_file = os.path.join(output_dir, f'metrics_per_video.parquet')
+            df.to_parquet(output_file, index=False)
+            # df.to_csv(output_file.replace('.parquet', '.csv'), index=False)
 
-
-        df_source_list = []
-        # Use the already structured per_video_hota_data instead of reconstructing it
-        for video_id, frame_data in self.per_frame_hota_data.items():
-            # Convert the list of HOTA_DATA for this video to a DataFrame
-            for frame_dat in frame_data:
-                df_source_list.append(frame_dat.get_dict())
-        # Save the DataFrame to a parquet file in the output directory
-        df = pd.DataFrame(df_source_list)
-        output_file = os.path.join(output_dir, f'metrics_per_frame.parquet')
-        df.to_parquet(output_file, index=False)
-        # df.to_csv(output_file.replace('.parquet', '.csv'), index=False)
+        if save_per_frame:
+            df_source_list = []
+            # Use the already structured per_video_hota_data instead of reconstructing it
+            for video_id, frame_data in self.per_frame_hota_data.items():
+                # Convert the list of HOTA_DATA for this video to a DataFrame
+                for frame_dat in frame_data:
+                    df_source_list.append(frame_dat.get_dict())
+            # Save the DataFrame to a parquet file in the output directory
+            df = pd.DataFrame(df_source_list)
+            output_file = os.path.join(output_dir, f'metrics_per_frame.parquet')
+            df.to_parquet(output_file, index=False)
+            # df.to_csv(output_file.replace('.parquet', '.csv'), index=False)
 
         df = pd.DataFrame(self.global_hota_data.get_dict())
         output_file = os.path.join(output_dir, f'hota.parquet')
         df.to_parquet(output_file, index=False)
         df.to_csv(output_file.replace('.parquet', '.csv'), index=False, float_format='%.4f')
 
-        # plot_hota(global_hota_data, output_dir)
-            
-        print(f"HOTA per-frame metric data write took: {time.time() - st} seconds")
 
             
 
