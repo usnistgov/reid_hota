@@ -130,8 +130,9 @@ class HOTAReIDEvaluator:
                 video_cost_matrix.construct_id2idx_lookup()
                 per_video_cost_matrices[video_id] = video_cost_matrix
         elif self.config.id_alignment_method == 'global':
+            # TODO maybe remove parallel, maybe only use parallel either way hide it here
             # For long data, parallel is 10s, serial is 23s
-            if False: #self.n_workers > 1:
+            if self.n_workers > 1:
                 global_cost_matrix = jaccard_cost_matrices_parallel(id_similarity_per_video, n_workers=self.n_workers)
             else:
                 # flatten similarity_per_video into a single 1D list to pass to jaccard_cost_matrices
