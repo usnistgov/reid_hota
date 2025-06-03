@@ -57,6 +57,7 @@ class HOTAReIDEvaluator:
             A dictionary of comparison dataframes, where the keys are the video ids and the values are the dataframes
         """
 
+        print(f"=== Computing ReID HOTA metrics ===")
         # Assert that ref_dfs is a dictionary of pandas dataframes
         assert isinstance(ref_dfs, dict), f"ref_dfs must be a dictionary, got {type(ref_dfs)}"
         for video_id, df in ref_dfs.items():

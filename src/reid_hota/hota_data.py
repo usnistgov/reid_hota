@@ -32,6 +32,7 @@ class HOTAMetrics:
     tp: np.ndarray
     fn: np.ndarray  
     fp: np.ndarray
+    unmatched_fp: float  # FP that are not matched to any ground truth id
     
     # Location accuracy
     loc_a_unnorm: np.ndarray
@@ -77,7 +78,7 @@ class HOTAData:
         """
 
         self.purge_non_matched_comp_ids = config.purge_non_matched_comp_ids
-        self.iou_thresholds = config.iou_thresholds
+        self.iou_thresholds = np.asarray(config.iou_thresholds)
         self.gids = config.gids
 
         # sim_cost_matrix is the cost matrix just for this single frame.
@@ -87,6 +88,7 @@ class HOTAData:
             tp=np.zeros(len(self.iou_thresholds), dtype=int),
             fn=np.zeros(len(self.iou_thresholds), dtype=int),
             fp=np.zeros(len(self.iou_thresholds), dtype=int),
+            unmatched_fp=0,
             loc_a_unnorm=np.zeros(len(self.iou_thresholds), dtype=float),
             loc_a=np.zeros(len(self.iou_thresholds), dtype=float),
             ass_a=np.zeros(len(self.iou_thresholds), dtype=float),
@@ -127,6 +129,7 @@ class HOTAData:
             'TP': self.metrics.tp,
             'FN': self.metrics.fn,
             'FP': self.metrics.fp,
+            'UnmatchedFP': self.metrics.unmatched_fp,
             'LocA': self.metrics.loc_a,
             'HOTA': self.metrics.hota,
             'AssA': self.metrics.ass_a,
@@ -163,6 +166,7 @@ class HOTAData:
         self.metrics.tp += other.metrics.tp
         self.metrics.fn += other.metrics.fn
         self.metrics.fp += other.metrics.fp
+        self.metrics.unmatched_fp += other.metrics.unmatched_fp
         self.metrics.loc_a_unnorm += other.metrics.loc_a_unnorm
         
         # Add sparse data
@@ -277,7 +281,8 @@ class HOTAData:
         valid_comp_ids = list(gt_to_tracker_id_map.values())
         filtered_lcl_comp_ids = lcl_comp_ids[np.isin(lcl_comp_ids, valid_comp_ids)]
         filtered_match_comp_ids = match_comp_ids[np.isin(match_comp_ids, valid_comp_ids)]
-        return filtered_lcl_comp_ids, filtered_match_comp_ids
+        unmatched_fp = len(lcl_comp_ids) - len(filtered_lcl_comp_ids)
+        return filtered_lcl_comp_ids, filtered_match_comp_ids, unmatched_fp
         
     
     def _get_matched_similarities(self, sim_cost_matrix: CostMatrixData, 
@@ -324,7 +329,8 @@ class HOTAData:
         # Step 5: Optional filtering of non-matched comparison IDs
         # This removes tracker IDs that don't have corresponding ground truth matches, reducing FP counts from video data that does not have full dense annotations of all objects
         if self.purge_non_matched_comp_ids:
-            lcl_comp_ids, match_comp_ids = self._apply_comp_id_filtering(lcl_comp_ids, match_comp_ids, gt_to_tracker_id_map)
+            lcl_comp_ids, match_comp_ids, unmatched_fp = self._apply_comp_id_filtering(lcl_comp_ids, match_comp_ids, gt_to_tracker_id_map)
+            self.metrics.unmatched_fp += unmatched_fp
 
         # Step 6: Extract similarity values for the matched pairs
         matched_similarity_vals = self._get_matched_similarities(sim_cost_matrix, match_ref_ids, match_comp_ids)
@@ -337,41 +343,82 @@ class HOTAData:
             self.sparse_data['comp_id_counts'].add_at(comp_id, 1)
         
         # Step 8: Compute metrics across all IoU thresholds
-        # Calculate and accumulate basic statistics
-        for a, alpha in enumerate(self.iou_thresholds):
-            actually_matched_mask = matched_similarity_vals >= alpha - np.finfo('float').eps
-            alpha_match_ref_ids = match_ref_ids[actually_matched_mask]
-            alpha_match_comp_ids = match_comp_ids[actually_matched_mask]
-            sub_match_sim_vals = matched_similarity_vals[actually_matched_mask]
-            num_matches = len(alpha_match_ref_ids)
-
-            self.metrics.tp[a] += num_matches
-            self.metrics.fn[a] += len(lcl_ref_ids) - num_matches
-            self.metrics.fp[a] += len(lcl_comp_ids) - num_matches
-
-            matched_ref_indices_mask = np.zeros(len(sim_cost_matrix.i_ids), dtype=bool)
-            matched_ref_indices_mask[np.isin(sim_cost_matrix.i_ids, alpha_match_ref_ids)] = True
-            matched_comp_indices_mask = np.zeros(len(sim_cost_matrix.j_ids), dtype=bool)
-            matched_comp_indices_mask[np.isin(sim_cost_matrix.j_ids, alpha_match_comp_ids)] = True
-
-            if isinstance(sim_cost_matrix, CostMatrixDataFrame) and sim_cost_matrix.i_hashes is not None and sim_cost_matrix.j_hashes is not None:
-                matched_ref_hashes = sim_cost_matrix.i_hashes[matched_ref_indices_mask]
-                matched_comp_hashes = sim_cost_matrix.j_hashes[matched_comp_indices_mask]
-                non_matched_ref_hashes = sim_cost_matrix.i_hashes[np.invert(matched_ref_indices_mask)]
-                non_matched_comp_hashes = sim_cost_matrix.j_hashes[np.invert(matched_comp_indices_mask)]
-                self.add_TP_hashes(matched_ref_hashes, a)
-                self.add_TP_hashes(matched_comp_hashes, a)
-                self.add_FN_hashes(non_matched_ref_hashes, a)
-                self.add_FP_hashes(non_matched_comp_hashes, a)
+        
+        # Pre-compute common values outside the loop
+        num_lcl_ref = len(lcl_ref_ids)
+        num_lcl_comp = len(lcl_comp_ids)
+        iou_thresholds_array = self.iou_thresholds
+        eps = np.finfo('float').eps
+        
+        # Vectorized threshold comparison for all IoU thresholds at once
+        if len(matched_similarity_vals) > 0:
+            # Create a 2D mask: (num_matches, num_thresholds)
+            threshold_masks = matched_similarity_vals[:, np.newaxis] >= (iou_thresholds_array - eps)[np.newaxis, :]
             
+            # Count matches for each threshold using vectorized sum
+            num_matches_per_threshold = np.sum(threshold_masks, axis=0)
+            
+            # Vectorized updates for TP, FN, FP
+            self.metrics.tp += num_matches_per_threshold
+            self.metrics.fn += num_lcl_ref - num_matches_per_threshold
+            self.metrics.fp += num_lcl_comp - num_matches_per_threshold
+            
+            # Pre-compute masks for hash operations if needed
+            if isinstance(sim_cost_matrix, CostMatrixDataFrame) and sim_cost_matrix.i_hashes is not None and sim_cost_matrix.j_hashes is not None:
+                # Create index mappings for faster lookups
+                ref_id_to_idx = {id_val: idx for idx, id_val in enumerate(sim_cost_matrix.i_ids)}
+                comp_id_to_idx = {id_val: idx for idx, id_val in enumerate(sim_cost_matrix.j_ids)}
+            
+            # Process each threshold
+            for a in range(len(self.iou_thresholds)):
+                # Get matches for this threshold using pre-computed mask
+                threshold_mask = threshold_masks[:, a]
+                alpha_match_ref_ids = match_ref_ids[threshold_mask]
+                alpha_match_comp_ids = match_comp_ids[threshold_mask]
+                sub_match_sim_vals = matched_similarity_vals[threshold_mask]
+                
+                # Handle hash operations if needed
+                if isinstance(sim_cost_matrix, CostMatrixDataFrame) and sim_cost_matrix.i_hashes is not None and sim_cost_matrix.j_hashes is not None:
+                    # Vectorized index lookup using pre-computed mappings
+                    if len(alpha_match_ref_ids) > 0:
+                        matched_ref_indices = np.array([ref_id_to_idx[id_val] for id_val in alpha_match_ref_ids], dtype=int)
+                        matched_comp_indices = np.array([comp_id_to_idx[id_val] for id_val in alpha_match_comp_ids], dtype=int)
+                        
+                        # Create boolean masks more efficiently
+                        matched_ref_mask = np.zeros(len(sim_cost_matrix.i_ids), dtype=bool)
+                        matched_comp_mask = np.zeros(len(sim_cost_matrix.j_ids), dtype=bool)
+                        matched_ref_mask[matched_ref_indices] = True
+                        matched_comp_mask[matched_comp_indices] = True
+                        
+                        # Extract hashes using masks
+                        matched_ref_hashes = sim_cost_matrix.i_hashes[matched_ref_mask]
+                        matched_comp_hashes = sim_cost_matrix.j_hashes[matched_comp_mask]
+                        non_matched_ref_hashes = sim_cost_matrix.i_hashes[~matched_ref_mask]
+                        non_matched_comp_hashes = sim_cost_matrix.j_hashes[~matched_comp_mask]
+                        
+                        self.add_TP_hashes(matched_ref_hashes, a)
+                        self.add_TP_hashes(matched_comp_hashes, a)
+                        self.add_FN_hashes(non_matched_ref_hashes, a)
+                        self.add_FP_hashes(non_matched_comp_hashes, a)
 
-            if num_matches > 0:
-                self.metrics.loc_a_unnorm[a] += float(np.sum(sub_match_sim_vals))
-
-                for k in range(len(alpha_match_ref_ids)):
-                    ref_id = alpha_match_ref_ids[k]
-                    comp_id = alpha_match_comp_ids[k]
-                    self.sparse_data['matches_counts'][a].add_at(ref_id, comp_id, 1)    
+                # Vectorized localization accuracy update
+                if len(sub_match_sim_vals) > 0:
+                    self.metrics.loc_a_unnorm[a] += float(np.sum(sub_match_sim_vals))
+                    
+                    # Batch update matches_counts - this is the main bottleneck we can't fully vectorize
+                    # due to the sparse matrix structure, but we can optimize the loop
+                    for ref_id, comp_id in zip(alpha_match_ref_ids, alpha_match_comp_ids):
+                        self.sparse_data['matches_counts'][a].add_at(ref_id, comp_id, 1)
+        else:
+            # No matches case - vectorized update
+            self.metrics.fn += num_lcl_ref
+            self.metrics.fp += num_lcl_comp
+            
+            # Handle hashes for no-matches case
+            if isinstance(sim_cost_matrix, CostMatrixDataFrame) and sim_cost_matrix.i_hashes is not None and sim_cost_matrix.j_hashes is not None:
+                for a in range(len(self.iou_thresholds)):
+                    self.add_FN_hashes(sim_cost_matrix.i_hashes, a)
+                    self.add_FP_hashes(sim_cost_matrix.j_hashes, a)
                     
         self._finalize()
         

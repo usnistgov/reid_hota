@@ -131,7 +131,7 @@ def test_hota_meva_subset(ref_dfs, comp_dfs):
     # global_hota_data, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, output_dir='./hota_plots', id_alignment_method='global', similarity_metric='iou')
     # global_hota_data, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, id_alignment_method='global', similarity_metric='iou')
 
-    config = HOTAConfig(id_alignment_method='global', similarity_metric='iou')
+    config = HOTAConfig(id_alignment_method='global', similarity_metric='iou', purge_non_matched_comp_ids=True)
     evaluator = HOTAReIDEvaluator(n_workers=20, config=config)
     evaluator.evaluate(ref_dfs, comp_dfs)
     global_hota_data = evaluator.get_global_hota_data()
@@ -147,7 +147,10 @@ def test_hota_meva_subset(ref_dfs, comp_dfs):
     for key in global_hota_data.keys():
         val = global_hota_data[key]
         if val is not None:
-            print(f"{key}: {global_hota_data[key][idx]}")
+            if isinstance(val, np.ndarray):
+                print(f"{key}: {global_hota_data[key][idx]}")
+            else:
+                print(f"{key}: {global_hota_data[key]}")
 
         
         
