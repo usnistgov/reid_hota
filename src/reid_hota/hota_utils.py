@@ -205,10 +205,51 @@ def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str 
     return CostMatrixDataFrame(i_ids=ref_ids, j_ids=comp_ids, i_hashes=ref_hashes, j_hashes=comp_hashes, cost_matrix=cost_matrix, video_id=dat.video_id, frame=dat.frame)
 
 
-def build_HOTA_objects(sim_cost_matrix_list: list[CostMatrixData], gt_to_tracker_id_map: dict[int, int], config: HOTAConfig) -> list[HOTAData]:
+def build_HOTA_objects_worker(sim_cost_matrix_list: list[CostMatrixData], gt_to_tracker_id_map: dict[int, int], config: HOTAConfig) -> list[HOTAData]:
     # if gt_to_tracker_id_map is None, then we use per-frame id alignment
     dat_list = [HOTAData(sim_cost_matrix, gt_to_tracker_id_map, config) for sim_cost_matrix in sim_cost_matrix_list]
     return dat_list
+
+
+def build_HOTA_objects(id_similarity_per_video, config: HOTAConfig, per_video_cost_matrices: list[CostMatrixData], global_cost_matrix: CostMatrixData, n_workers: int = 1):
+    # Create a list of (video_id, frames) tuples to process
+    video_chunks = list(id_similarity_per_video.values())
+
+    if n_workers > 1:
+        # Process all videos in parallel - one chunk per video
+        with Pool(processes=n_workers) as pool:
+
+            # Process each video in parallel
+            if config.id_alignment_method == 'per_video':
+                # use the per-video id alignment cost matrix instead of the global one
+                video_results = pool.starmap(build_HOTA_objects_worker, [(chunk, per_video_cost_matrices[chunk[0].video_id].ref2comp_id_map, config) for chunk in video_chunks])
+            elif config.id_alignment_method == 'per_frame':
+                video_results = pool.starmap(build_HOTA_objects_worker, [(chunk, None, config) for chunk in video_chunks])
+            else:
+                video_results = pool.starmap(build_HOTA_objects_worker, [(chunk, global_cost_matrix.ref2comp_id_map, config) for chunk in video_chunks])
+
+    else:
+        video_results = []
+        for video_id, cm_values in id_similarity_per_video.items():
+            # Process frames for this video sequentially
+            if config.id_alignment_method == 'per_video':
+                frame_dat = build_HOTA_objects_worker(cm_values, per_video_cost_matrices[video_id].ref2comp_id_map, config)
+            elif config.id_alignment_method == 'per_frame':
+                frame_dat = build_HOTA_objects_worker(cm_values, None, config)
+            else:
+                frame_dat = build_HOTA_objects_worker(cm_values, global_cost_matrix.ref2comp_id_map, config)
+            video_results.append(frame_dat)
+
+    # video_results is a list[HOTA_DATA]
+    
+    # Organize results into per-video structure
+    per_frame_hota_data = {res[0].video_id: res for res in video_results}
+    per_video_hota_data = {res[0].video_id: merge_hota_data(res) for res in video_results}
+    return per_video_hota_data, per_frame_hota_data
+
+
+
+
 
 
 
@@ -218,7 +259,7 @@ def compute_cost_per_video_per_frame(ref_dfs: dict[str, pd.DataFrame], comp_dfs:
     # ************************************
     # Convert the list[pd.DataFrame] into a list[CostMatrixData]
     # ************************************
-    frame_extraction_work_queue = _linearize_FrameExtractionInputData(ref_dfs, comp_dfs)
+    frame_extraction_work_queue = [FrameExtractionInputData(ref_dfs[video_id], comp_dfs[video_id], video_id) for video_id in ref_dfs.keys()]
     id_similarity_per_video = dict()
     if n_workers > 1:
         with Pool(processes=n_workers) as pool:
@@ -227,16 +268,16 @@ def compute_cost_per_video_per_frame(ref_dfs: dict[str, pd.DataFrame], comp_dfs:
         results = [compute_id_alignment_similarity_from_df(dat, similarity_metric) for dat in frame_extraction_work_queue]
 
     id_similarity_per_video = {}
-    for vid, res in results:
-        id_similarity_per_video[vid] = res
+    for video_id, result in results:
+        id_similarity_per_video[video_id] = result
 
     return id_similarity_per_video
 
 
-def process_jaccard_cost_matrix_chunk(matrices_chunk: list[CostMatrixData]) -> tuple:
+def process_jaccard_cost_matrix_chunk(video_id: str, matrices_chunk: list[CostMatrixData]) -> tuple:
     """Process a chunk of cost matrices and return intermediate calculations."""
     if not matrices_chunk:
-        return np.array([]), np.array([]), np.array([]), np.array([]), np.zeros((0, 0), dtype=np.float64)
+        return video_id, np.array([]), np.array([]), np.array([]), np.array([]), np.zeros((0, 0), dtype=np.float64)
         
 
     # Get unique IDs in this chunk
@@ -264,61 +305,70 @@ def process_jaccard_cost_matrix_chunk(matrices_chunk: list[CostMatrixData]) -> t
         cm = normalize_cost_matrix(data.cost_matrix.copy())
         chunk_cost_sum[i_idx[:, np.newaxis], j_idx[np.newaxis, :]] += cm
     
-    return chunk_i_ids, chunk_j_ids, chunk_i_counts, chunk_j_counts, chunk_cost_sum
+    return video_id, chunk_i_ids, chunk_j_ids, chunk_i_counts, chunk_j_counts, chunk_cost_sum
 
 
-def jaccard_cost_matrices(matrices_dict: dict[str, list[CostMatrixData]], n_workers: int = 1) -> CostMatrixData:
+def jaccard_cost_matrices(matrices_dict: dict[str, list[CostMatrixData]], return_per_key:bool = False, n_workers: int = 1) -> CostMatrixData:
     if not matrices_dict:
         raise ValueError("dict[str, list[CostMatrixData]] is empty")
     
-    # Split into chunks
-    chunks = list(matrices_dict.values())
-
     # Single chunk case - use original implementation
     if n_workers <= 1:
         # raise ValueError("n_workers must be greater than 1")
-        results = [process_jaccard_cost_matrix_chunk(chunk) for chunk in chunks]
+        results = [process_jaccard_cost_matrix_chunk(video_id, chunk) for video_id, chunk in matrices_dict.items()]
     else:
         # Process chunks in parallel
         with Pool(processes=n_workers) as pool:
-            results = pool.map(process_jaccard_cost_matrix_chunk, chunks)
+            results = pool.starmap(process_jaccard_cost_matrix_chunk, matrices_dict.items())
         
-    # Collect all unique IDs
-    all_i_ids = np.unique(np.concatenate([res[0] for res in results]))
-    all_j_ids = np.unique(np.concatenate([res[1] for res in results]))
-    
-    # Create global lookups
-    ref_lookup = {id_val: idx for idx, id_val in enumerate(all_i_ids)}
-    comp_lookup = {id_val: idx for idx, id_val in enumerate(all_j_ids)}
-    
-    # Initialize global matrices
-    shape = (len(all_i_ids), len(all_j_ids))
-    i_counts = np.zeros(shape[0])
-    j_counts = np.zeros(shape[1])
-    cost_sum = np.zeros(shape, dtype=np.float64)
-    
-    # Combine chunk results
-    for chunk_i_ids, chunk_j_ids, chunk_i_counts, chunk_j_counts, chunk_cost_sum in results:
-        # Map chunk indices to global indices
-        i_global_idx = np.fromiter((ref_lookup[id_] for id_ in chunk_i_ids), dtype=int)
-        j_global_idx = np.fromiter((comp_lookup[id_] for id_ in chunk_j_ids), dtype=int)
+    if return_per_key:
+        cost_matricies = dict()
+        for video_id, i_ids, j_ids, i_counts, j_counts, cost_sum in results:
+            # Apply Jaccard formula
+            cost_matrix = cost_sum / (i_counts[:, np.newaxis] + j_counts[np.newaxis, :] - cost_sum)
+            cost_matrix = CostMatrixData(i_ids=i_ids, j_ids=j_ids, cost_matrix=cost_matrix, video_id=None, frame=None)
+            cost_matricies[video_id] = cost_matrix
+        return cost_matricies
+
+    else:
+        # Collect all unique IDs
+        # video_id, chunk_i_ids, chunk_j_ids, chunk_i_counts, chunk_j_counts, chunk_cost_sum
+        all_i_ids = np.unique(np.concatenate([res[1] for res in results]))
+        all_j_ids = np.unique(np.concatenate([res[2] for res in results]))
         
-        # Update global counts and sum
-        for local_idx, global_idx in enumerate(i_global_idx):
-            i_counts[global_idx] += chunk_i_counts[local_idx]
+        # Create global lookups
+        ref_lookup = {id_val: idx for idx, id_val in enumerate(all_i_ids)}
+        comp_lookup = {id_val: idx for idx, id_val in enumerate(all_j_ids)}
+        
+        # Initialize global matrices
+        shape = (len(all_i_ids), len(all_j_ids))
+        i_counts = np.zeros(shape[0])
+        j_counts = np.zeros(shape[1])
+        cost_sum = np.zeros(shape, dtype=np.float64)
+        
+        # Combine chunk results
+        for _, chunk_i_ids, chunk_j_ids, chunk_i_counts, chunk_j_counts, chunk_cost_sum in results:
+            # Map chunk indices to global indices
+            i_global_idx = np.fromiter((ref_lookup[id_] for id_ in chunk_i_ids), dtype=int)
+            j_global_idx = np.fromiter((comp_lookup[id_] for id_ in chunk_j_ids), dtype=int)
             
-        for local_idx, global_idx in enumerate(j_global_idx):
-            j_counts[global_idx] += chunk_j_counts[local_idx]
+            # Update global counts and sum
+            for local_idx, global_idx in enumerate(i_global_idx):
+                i_counts[global_idx] += chunk_i_counts[local_idx]
+                
+            for local_idx, global_idx in enumerate(j_global_idx):
+                j_counts[global_idx] += chunk_j_counts[local_idx]
+            
+            # Add cost sums from chunk to global matrix
+            for i_local, i_global in enumerate(i_global_idx):
+                for j_local, j_global in enumerate(j_global_idx):
+                    cost_sum[i_global, j_global] += chunk_cost_sum[i_local, j_local]
         
-        # Add cost sums from chunk to global matrix
-        for i_local, i_global in enumerate(i_global_idx):
-            for j_local, j_global in enumerate(j_global_idx):
-                cost_sum[i_global, j_global] += chunk_cost_sum[i_local, j_local]
-    
-    # Apply Jaccard formula
-    cost_matrix = cost_sum / (i_counts[:, np.newaxis] + j_counts[np.newaxis, :] - cost_sum)
-    
-    return CostMatrixData(i_ids=all_i_ids, j_ids=all_j_ids, cost_matrix=cost_matrix, video_id=None, frame=None)
+        # Apply Jaccard formula
+        cost_matrix = cost_sum / (i_counts[:, np.newaxis] + j_counts[np.newaxis, :] - cost_sum)
+        
+        return {'global': CostMatrixData(i_ids=all_i_ids, j_ids=all_j_ids, cost_matrix=cost_matrix, video_id=None, frame=None)}
+        
 
 
 def extract_per_frame_data(input_dat: FrameExtractionInputData, class_id: np.dtype[np.object_] = None) -> list[VideoFrameData]:
@@ -458,15 +508,6 @@ def normalize_cost_matrix(cost_matrix: np.ndarray) -> np.ndarray:
     np.divide(cost_matrix, denom, out=cost_matrix)
 
     return cost_matrix
-
-
-
-def _linearize_FrameExtractionInputData(ref_dfs, comp_dfs) -> list[FrameExtractionInputData]:
-    # ref_dfs and comp_dfs must have the same keys
-    assert set(ref_dfs.keys()) == set(comp_dfs.keys())
-
-    # Create the result list with a single list comprehension
-    return [FrameExtractionInputData(ref_dfs[video_id], comp_dfs[video_id], video_id) for video_id in ref_dfs.keys()]
 
 
 

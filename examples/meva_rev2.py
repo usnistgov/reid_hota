@@ -17,11 +17,13 @@ def create_tracking_data_meva_rev2_subset() -> tuple[dict[str, pd.DataFrame], di
     parent_dir = os.path.dirname(script_dir)
     gt_fp = os.path.join(parent_dir, 'tests', 'data', 'meva_rid_short', 'ref')
     pred_fp = os.path.join(parent_dir, 'tests', 'data', 'meva_rid_short', 'comp')
+    # gt_fp = os.path.join(parent_dir, 'tests', 'data', 'meva_rid_long', 'ref')
+    # pred_fp = os.path.join(parent_dir, 'tests', 'data', 'meva_rid_long', 'comp')
 
     fns = [fn for fn in os.listdir(gt_fp) if fn.endswith('.csv')]
     ref_dfs = {}
     comp_dfs = {}
-    for fn in fns[:15]:
+    for fn in fns:
         gt_df = pd.read_csv(os.path.join(gt_fp, fn))
         pred_df = pd.read_csv(os.path.join(pred_fp, fn))
 
@@ -129,7 +131,7 @@ def test_hota_meva_subset(ref_dfs, comp_dfs):
     # global_hota_data, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, output_dir='./hota_plots', id_alignment_method='global', similarity_metric='iou')
     # global_hota_data, per_video_hota_data, per_frame_hota = fh.compute_hota(ref_dfs, comp_dfs, n_workers=40, id_alignment_method='global', similarity_metric='iou')
 
-    config = HOTAConfig(id_alignment_method='per_video', similarity_metric='iou')
+    config = HOTAConfig(id_alignment_method='global', similarity_metric='iou')
     evaluator = HOTAReIDEvaluator(n_workers=20, config=config)
     evaluator.evaluate(ref_dfs, comp_dfs)
     global_hota_data = evaluator.get_global_hota_data()

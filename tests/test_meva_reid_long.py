@@ -130,37 +130,39 @@ class TestHOTA_meva_full_global_id_alignment:
         
 
 
-# class TestHOTA_meva_full_video_id_alignment:
-#     """Test class for HOTA metric functionality."""
+class TestHOTA_meva_full_video_id_alignment:
+    """Test class for HOTA metric functionality."""
     
-#     def test_compute_hota(self, tracking_data):
-#         """Test the HOTA metric computation."""
-#         ref_dfs, comp_dfs = tracking_data
+    def test_compute_hota(self, tracking_data):
+        """Test the HOTA metric computation."""
+        ref_dfs, comp_dfs = tracking_data
 
-#         evaluator = HOTAReIDEvaluator(n_workers=40, id_alignment_method='per_video', similarity_metric='iou')
-#         evaluator.evaluate(ref_dfs, comp_dfs)
-#         global_hota_data = evaluator.get_global_hota_data()
+        config = HOTAConfig(id_alignment_method='per_video', similarity_metric='iou')
+        evaluator = HOTAReIDEvaluator(n_workers=20, config=config)
+        evaluator.evaluate(ref_dfs, comp_dfs)
+        global_hota_data = evaluator.get_global_hota_data()
 
 
-#         gt_fp = os.path.join(os.path.dirname(__file__), 'data', 'meva_rid_long', 'results_video_id_alignment.json')
-#         validate_results(global_hota_data, gt_fp)  # raises AssertionError if any keys fail
+        gt_fp = os.path.join(os.path.dirname(__file__), 'data', 'meva_rid_long', 'results_video_id_alignment.json')
+        validate_results(global_hota_data, gt_fp)  # raises AssertionError if any keys fail
 
         
 
-# class TestHOTA_meva_full_frame_id_alignment:
-#     """Test class for HOTA metric functionality."""
+class TestHOTA_meva_full_frame_id_alignment:
+    """Test class for HOTA metric functionality."""
     
-#     def test_compute_hota(self, tracking_data):
-#         """Test the HOTA metric computation."""
-#         ref_dfs, comp_dfs = tracking_data
+    def test_compute_hota(self, tracking_data):
+        """Test the HOTA metric computation."""
+        ref_dfs, comp_dfs = tracking_data
 
 
-#         evaluator = HOTAReIDEvaluator(n_workers=40, id_alignment_method='per_frame', similarity_metric='iou')
-#         evaluator.evaluate(ref_dfs, comp_dfs)
-#         global_hota_data = evaluator.get_global_hota_data()
+        config = HOTAConfig(id_alignment_method='per_frame', similarity_metric='iou')
+        evaluator = HOTAReIDEvaluator(n_workers=20, config=config)
+        evaluator.evaluate(ref_dfs, comp_dfs)
+        global_hota_data = evaluator.get_global_hota_data()
 
-#         gt_fp = os.path.join(os.path.dirname(__file__), 'data', 'meva_rid_long', 'results_frame_id_alignment.json')
-#         validate_results(global_hota_data, gt_fp)  # raises AssertionError if any keys fail
+        gt_fp = os.path.join(os.path.dirname(__file__), 'data', 'meva_rid_long', 'results_frame_id_alignment.json')
+        validate_results(global_hota_data, gt_fp)  # raises AssertionError if any keys fail
         
         
 

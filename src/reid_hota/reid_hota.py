@@ -120,28 +120,29 @@ class HOTAReIDEvaluator:
         st = time.time()
         print(f"Jaccard merge of per-frame cost")
         
+        # None is a placeholder to tell later HOTA construction to use per-frame id alignment
+        per_video_cost_matrices = None
+        global_cost_matrix = None
         if self.config.id_alignment_method == 'per_video':
-            per_video_cost_matrices = dict()
-            for video_id in id_similarity_per_video.keys():
-                # function expects a dict[str, list[CostMatrixData]], so pass in just the single video dict
-                video_cost_matrix = jaccard_cost_matrices({video_id: id_similarity_per_video[video_id]})
-                # Construct the assignment between ids
-                video_cost_matrix.construct_assignment()
-                # create mapping from ids into the cost matrix index. This translates between the global id space and incides into the cost matrix
-                video_cost_matrix.construct_id2idx_lookup()
-                per_video_cost_matrices[video_id] = video_cost_matrix
+            # def jaccard_cost_matrices(matrices_dict: dict[str, list[CostMatrixData]], return_per_key:bool = False, n_workers: int = 1) -> CostMatrixData:
+            per_video_cost_matrices = jaccard_cost_matrices(id_similarity_per_video, return_per_key=True, n_workers=self.n_workers)
+            for video_id in per_video_cost_matrices.keys():
+                per_video_cost_matrices[video_id].construct_assignment()
+                per_video_cost_matrices[video_id].construct_id2idx_lookup()
+
         elif self.config.id_alignment_method == 'global':
-            global_cost_matrix = jaccard_cost_matrices(id_similarity_per_video, n_workers=self.n_workers)
+            global_cost_matrix = jaccard_cost_matrices(id_similarity_per_video, return_per_key=False, n_workers=self.n_workers)
+            global_cost_matrix = global_cost_matrix['global']
             # Construct the global assignment between ids
             global_cost_matrix.construct_assignment()
             # create mapping from global ids into the cost matrix index
             # preconstruct before copying to parallel workers, to save some time
             global_cost_matrix.construct_id2idx_lookup()
+
         elif self.config.id_alignment_method == 'per_frame':
-            # None is a placeholder to tell later HOTA construction to use per-frame id alignment
+            # None is a placeholder to tell HOTA construction to use per-frame id alignment
             per_video_cost_matrices = None
             global_cost_matrix = None
-        
 
         # cost_matrix_data is the global id alignment cost matrix for all videos
         print(f"  took: {time.time() - st} seconds")
@@ -157,42 +158,12 @@ class HOTAReIDEvaluator:
         print(f"Computing per-frame HOTA data")
         
         # Maintain video structure by processing each video separately
-        self.per_video_hota_data = {}
-        self.per_frame_hota_data = {}
+        self.per_video_hota_data, self.per_frame_hota_data = build_HOTA_objects(id_similarity_per_video, 
+                                                                                 config=self.config, 
+                                                                                 per_video_cost_matrices=per_video_cost_matrices, 
+                                                                                 global_cost_matrix=global_cost_matrix, 
+                                                                                 n_workers=self.n_workers)
         
-        if self.n_workers > 1:
-            # Process all videos in parallel - one chunk per video
-            with Pool(processes=self.n_workers) as pool:
-                # Create a list of (video_id, frames) tuples to process
-                video_chunks = list(id_similarity_per_video.values())
-                
-                # Process each video in parallel
-                if self.config.id_alignment_method == 'per_video':
-                    # use the per-video id alignment cost matrix instead of the global one
-                    video_results = pool.starmap(build_HOTA_objects, [(chunk, per_video_cost_matrices[chunk[0].video_id].ref2comp_id_map, self.config) for chunk in video_chunks])
-                elif self.config.id_alignment_method == 'per_frame':
-                    video_results = pool.starmap(build_HOTA_objects, [(chunk, None, self.config) for chunk in video_chunks])
-                else:
-                    video_results = pool.starmap(build_HOTA_objects, [(chunk, global_cost_matrix.ref2comp_id_map, self.config) for chunk in video_chunks])
-
-                # video_results is a list[HOTA_DATA]
-                
-                # Organize results into per-video structure
-                self.per_frame_hota_data = {res[0].video_id: res for res in video_results}
-                self.per_video_hota_data = {res[0].video_id: merge_hota_data(res) for res in video_results}
-        else:
-            for video_id, cm_values in id_similarity_per_video.items():
-                # Process frames for this video sequentially
-                if self.config.id_alignment_method == 'per_video':
-                    frame_dat = build_HOTA_objects(cm_values, per_video_cost_matrices[video_id].ref2comp_id_map, self.config)
-                elif self.config.id_alignment_method == 'per_frame':
-                    frame_dat = build_HOTA_objects(cm_values, None, self.config)
-                else:
-                    frame_dat = build_HOTA_objects(cm_values, global_cost_matrix.ref2comp_id_map, self.config)
-
-                self.per_frame_hota_data[video_id] = frame_dat
-                self.per_video_hota_data[video_id] = merge_hota_data(frame_dat)
-
         print(f"  took: {time.time() - st} seconds")
 
 
