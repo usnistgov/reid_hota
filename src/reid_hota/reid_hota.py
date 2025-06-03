@@ -4,7 +4,7 @@ import pandas as pd
 import time
 from multiprocessing import Pool
 
-from .hota_utils import compute_cost_per_video_per_frame, jaccard_cost_matrices, build_HOTA_objects, merge_hota_data, jaccard_cost_matrices_parallel
+from .hota_utils import compute_cost_per_video_per_frame, jaccard_cost_matrices, build_HOTA_objects, merge_hota_data
 from .config import HOTAConfig
 
 
@@ -123,30 +123,22 @@ class HOTAReIDEvaluator:
         if self.config.id_alignment_method == 'per_video':
             per_video_cost_matrices = dict()
             for video_id in id_similarity_per_video.keys():
-                video_cost_matrix = jaccard_cost_matrices(id_similarity_per_video[video_id])
+                # function expects a dict[str, list[CostMatrixData]], so pass in just the single video dict
+                video_cost_matrix = jaccard_cost_matrices({video_id: id_similarity_per_video[video_id]})
                 # Construct the assignment between ids
                 video_cost_matrix.construct_assignment()
                 # create mapping from ids into the cost matrix index. This translates between the global id space and incides into the cost matrix
                 video_cost_matrix.construct_id2idx_lookup()
                 per_video_cost_matrices[video_id] = video_cost_matrix
         elif self.config.id_alignment_method == 'global':
-            # TODO maybe remove parallel, maybe only use parallel either way hide it here
-            # For long data, parallel is 10s, serial is 23s
-            if self.n_workers > 1:
-                global_cost_matrix = jaccard_cost_matrices_parallel(id_similarity_per_video, n_workers=self.n_workers)
-            else:
-                # flatten similarity_per_video into a single 1D list to pass to jaccard_cost_matrices
-                flattened_similarity = []
-                for v in id_similarity_per_video.values():
-                    flattened_similarity.extend(v)
-                global_cost_matrix = jaccard_cost_matrices(flattened_similarity)    
-
+            global_cost_matrix = jaccard_cost_matrices(id_similarity_per_video, n_workers=self.n_workers)
             # Construct the global assignment between ids
             global_cost_matrix.construct_assignment()
             # create mapping from global ids into the cost matrix index
             # preconstruct before copying to parallel workers, to save some time
             global_cost_matrix.construct_id2idx_lookup()
         elif self.config.id_alignment_method == 'per_frame':
+            # None is a placeholder to tell later HOTA construction to use per-frame id alignment
             per_video_cost_matrices = None
             global_cost_matrix = None
         

@@ -231,44 +231,6 @@ def compute_cost_per_video_per_frame(ref_dfs: dict[str, pd.DataFrame], comp_dfs:
         id_similarity_per_video[vid] = res
 
     return id_similarity_per_video
-    
-
-def jaccard_cost_matrices(matrices_list: list[CostMatrixData]) -> CostMatrixData:
-    if not matrices_list:
-        raise ValueError("list[CostMatrixData] is empty")
-    
-    # Get unique IDs across all matrices
-    ref_ids = np.unique(np.concatenate([
-        data.i_ids for data in matrices_list
-    ]))
-    comp_ids = np.unique(np.concatenate([
-        data.j_ids for data in matrices_list
-    ]))
-
-    ref_lookup = {id_val: idx for idx, id_val in enumerate(ref_ids)}
-    comp_lookup = {id_val: idx for idx, id_val in enumerate(comp_ids)}
-
-    # Initialize output matrices with zeros
-    shape = (len(ref_ids), len(comp_ids))
-    i_counts = np.zeros(shape[0])
-    j_counts = np.zeros(shape[1])
-    cost_sum = np.zeros(shape, dtype=np.float64)
-
-    # Process each CostMatrixData
-    for data in matrices_list:
-        ref_idx = np.fromiter((ref_lookup[id_] for id_ in data.i_ids), dtype=int)
-        comp_idx = np.fromiter((comp_lookup[id_] for id_ in data.j_ids), dtype=int)
-
-        i_counts[ref_idx] += 1
-        j_counts[comp_idx] += 1
-
-        # get a copy of the matrix, normalize the cost values and add to the sum
-        cm = normalize_cost_matrix(data.cost_matrix.copy())
-        cost_sum[ref_idx[:, np.newaxis], comp_idx[np.newaxis, :]] += cm
-
-    cost_matrix = cost_sum / (i_counts[:, np.newaxis] + j_counts[np.newaxis, :] - cost_sum)
-
-    return CostMatrixData(i_ids=ref_ids, j_ids=comp_ids, cost_matrix=cost_matrix, video_id=None, frame=None)
 
 
 def process_jaccard_cost_matrix_chunk(matrices_chunk: list[CostMatrixData]) -> tuple:
@@ -305,19 +267,18 @@ def process_jaccard_cost_matrix_chunk(matrices_chunk: list[CostMatrixData]) -> t
     return chunk_i_ids, chunk_j_ids, chunk_i_counts, chunk_j_counts, chunk_cost_sum
 
 
-def jaccard_cost_matrices_parallel(matrices_dict: dict[str, list[CostMatrixData]], n_workers: int = 1) -> CostMatrixData:
+def jaccard_cost_matrices(matrices_dict: dict[str, list[CostMatrixData]], n_workers: int = 1) -> CostMatrixData:
     if not matrices_dict:
         raise ValueError("dict[str, list[CostMatrixData]] is empty")
     
-    
+    # Split into chunks
+    chunks = list(matrices_dict.values())
+
     # Single chunk case - use original implementation
     if n_workers <= 1:
-        raise ValueError("n_workers must be greater than 1")
-        
+        # raise ValueError("n_workers must be greater than 1")
+        results = [process_jaccard_cost_matrix_chunk(chunk) for chunk in chunks]
     else:
-        # Split into chunks
-        chunks = list(matrices_dict.values())
-
         # Process chunks in parallel
         with Pool(processes=n_workers) as pool:
             results = pool.map(process_jaccard_cost_matrix_chunk, chunks)
