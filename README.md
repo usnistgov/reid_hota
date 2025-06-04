@@ -6,8 +6,10 @@
 ### Key Features
 
 - **ReID-Aware Evaluation**: Handles identity switches and re-appearances common in ReID scenarios
-- **Parallel Processing**: Multi-threaded computation for 5-10x faster evaluation
+- **Parallel Processing**: Multi-threaded computation for faster evaluation
 - **Flexible ID Assignment**: Flexible ID assignment per frame, video, and global
+- **Extraneous Box Handling**: Optional removal of comparison ids which don't have an assignment to a ground truth id, with those FP tracked separately. 
+- **Flexible ID Assignment Cost**: ID assignment cost can be box IOU or L2 distance in Lat/Long/Alt space.
 
 ## Installation
 
@@ -22,26 +24,23 @@ uv sync
 ### Basic Usage
 
 ```python
-from hota_reid import HOTAReIDEvaluator
+from reid_hota import HOTAReIDEvaluator, HOTAConfig
+# create a reference and comparison dictionary of pandas dataframes. Each dataframe contains all detection boxes from that video.
+ref_dfs, comp_dfs = load_data()
 
-# Initialize evaluator with ReID support
-evaluator = HOTAReIDEvaluator(
-    n_workers=8 
-)
+# create the Config controlling the Metric calculation
+config = HOTAConfig(id_alignment_method='global', similarity_metric='iou', purge_non_matched_comp_ids=True)
+# create the evaluator
+evaluator = HOTAReIDEvaluator(n_workers=20, config=config)
+# evaluate on data
+evaluator.evaluate(ref_dfs, comp_dfs)
+# extract results
+global_hota_data = evaluator.get_global_hota_data().get_dict()
+per_video_hota_data = evaluator.get_per_video_hota_data()
+per_frame_hota_data = evaluator.get_per_frame_hota_data()
 
-# Evaluate tracking results
-results = evaluator.evaluate(
-    ref_dfs={"ref_video": ground_truth_df},
-    comp_dfs={"comp_video": comparison_df}
-)
-
-print(f"HOTA-ReID Score: {results['hota']:.3f}")
+print(f"HOTA-ReID Score: {global_hota_data['HOTA']:.3f}")
 ```
-
-
-## Methodology
-
-HOTA-ReID extends the original HOTA metric by:
 
 
 ## License
@@ -80,9 +79,9 @@ To see the latest statement, please visit:
 
 ## Contact
 
-- **Author**: Your Name
-- **Email**: your.email@institution.edu
-- **Project Link**: https://github.com/yourusername/hota-reid
+- **Author**: Michael Majurski
+- **Email**: michael.majurski@nist.gov
+- **Project Link**: https://github.com/usnistgov/reid_hota
 
 
 

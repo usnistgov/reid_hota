@@ -1,8 +1,6 @@
 import os
-import numpy as np
 import pandas as pd
 import time
-from multiprocessing import Pool
 
 from .hota_utils import compute_cost_per_video_per_frame, jaccard_cost_matrices, build_HOTA_objects, merge_hota_data
 from .config import HOTAConfig
@@ -10,42 +8,50 @@ from .config import HOTAConfig
 
 
 class HOTAReIDEvaluator:
-
+    """
+    Evaluator for HOTA (Higher Order Tracking Accuracy) metrics with ReID extensions.
+    
+    This class provides functionality to compute HOTA metrics for multi-object tracking
+    and re-identification evaluation, supporting various similarity metrics and 
+    ID alignment strategies.
+    """
     
     REQUIRED_COLUMNS = ['frame_id', 'object_id', 'x', 'y', 'w', 'h', 'class_id', 'lat', 'lon', 'alt', 'box_hash']
 
-    def __init__(self, n_workers:int=0, 
-                 config: HOTAConfig = HOTAConfig()):
+    def __init__(self, n_workers: int = 0, config: HOTAConfig = HOTAConfig()):
         """
         Initialize the HOTAReIDEvaluator
 
-        n_workers: Number of workers to use for parallel processing
-
-        class_ids: List of class ids to evaluate against. If None, all classes are evaluated.
-        config: HOTAConfig object defining how the metric should be computed
+        Args:
+            n_workers: Number of workers to use for parallel processing. 
+            config: HOTAConfig object defining how the metric should be computed
         """
         self.n_workers = n_workers
         self.config = config
         self.config.validate()
        
-        self.requried_cols = self.REQUIRED_COLUMNS.copy()
-        if self.config.class_ids is None:
-            self.requried_cols.remove('class_id')
-        if not self.config.track_fp_fn_tp_box_hashes:
-            self.requried_cols.remove('box_hash')
-        if self.config.similarity_metric == 'latlonalt':
-            self.requried_cols.remove('x')
-            self.requried_cols.remove('y')
-            self.requried_cols.remove('w')
-            self.requried_cols.remove('h')
-        if self.config.similarity_metric == 'iou':
-            self.requried_cols.remove('lat')
-            self.requried_cols.remove('lon')
-            self.requried_cols.remove('alt')
-
+        self.required_cols = self._determine_required_columns()
         self.global_hota_data = None
         self.per_video_hota_data = None
         self.per_frame_hota_data = None
+        
+
+    def _determine_required_columns(self) -> list[str]:
+        """Determine which columns are required based on configuration."""
+        required_cols = self.REQUIRED_COLUMNS.copy()
+        
+        if self.config.class_ids is None:
+            required_cols.remove('class_id')
+        if not self.config.track_fp_fn_tp_box_hashes:
+            required_cols.remove('box_hash')
+        if self.config.similarity_metric == 'latlonalt':
+            for col in ['x', 'y', 'w', 'h']:
+                required_cols.remove(col)
+        if self.config.similarity_metric == 'iou':
+            for col in ['lat', 'lon', 'alt']:
+                required_cols.remove(col)
+        
+        return required_cols
 
     def evaluate(self, ref_dfs: dict[str, pd.DataFrame], 
                  comp_dfs: dict[str, pd.DataFrame]):
@@ -72,12 +78,12 @@ class HOTAReIDEvaluator:
         # For any missing video IDs in dfs, create empty dataframes
         for id in required_video_ids:
             if id not in comp_dfs.keys():
-                comp_dfs[id] = pd.DataFrame(columns=self.requried_cols)
+                comp_dfs[id] = pd.DataFrame(columns=self.required_cols)
             if id not in ref_dfs.keys():
-                ref_dfs[id] = pd.DataFrame(columns=self.requried_cols)
+                ref_dfs[id] = pd.DataFrame(columns=self.required_cols)
 
         # verify columns in sequence_data
-        for col in self.requried_cols:
+        for col in self.required_cols:
             for key in ref_dfs.keys():
                 ref_df = ref_dfs[key]
                 assert col in ref_df.columns, f"Column \"{col}\" not found in ref_df \"{key}\""
@@ -87,9 +93,9 @@ class HOTAReIDEvaluator:
 
         # remove all but the required columns
         for key in ref_dfs.keys():
-            ref_dfs[key] = ref_dfs[key][self.requried_cols]
+            ref_dfs[key] = ref_dfs[key][self.required_cols]
         for key in comp_dfs.keys():
-            comp_dfs[key] = comp_dfs[key][self.requried_cols]
+            comp_dfs[key] = comp_dfs[key][self.required_cols]
 
 
         # Keep only the relevant classes
@@ -155,7 +161,6 @@ class HOTAReIDEvaluator:
         # Compute the per-frame HOTA data that will later be turned into HOTA data
         # ************************************
         st = time.time()
-        # utilization here is meh
         print(f"Computing per-frame HOTA data")
         
         # Maintain video structure by processing each video separately
@@ -227,7 +232,7 @@ class HOTAReIDEvaluator:
                 df_source_list.append(video_data.get_dict())
             # Save the DataFrame to a parquet file in the output directory
             df = pd.DataFrame(df_source_list)
-            output_file = os.path.join(output_dir, f'metrics_per_video.parquet')
+            output_file = os.path.join(output_dir, f'hota_per_video.parquet')
             df.to_parquet(output_file, index=False)
             # df.to_csv(output_file.replace('.parquet', '.csv'), index=False)
 
@@ -240,7 +245,7 @@ class HOTAReIDEvaluator:
                     df_source_list.append(frame_dat.get_dict())
             # Save the DataFrame to a parquet file in the output directory
             df = pd.DataFrame(df_source_list)
-            output_file = os.path.join(output_dir, f'metrics_per_frame.parquet')
+            output_file = os.path.join(output_dir, f'hota_per_frame.parquet')
             df.to_parquet(output_file, index=False)
             # df.to_csv(output_file.replace('.parquet', '.csv'), index=False)
 

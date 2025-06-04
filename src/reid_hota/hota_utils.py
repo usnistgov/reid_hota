@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import copy
 from multiprocessing import Pool
+from typing import List
 
 
 # Suppress the SettingWithCopyWarning
@@ -12,7 +13,19 @@ from .hota_data import VideoFrameData, FrameExtractionInputData, HOTAData
 from .config import HOTAConfig
 
 
-def merge_hota_data(hota_data_list: list[HOTAData]) -> HOTAData:
+def merge_hota_data(hota_data_list: List[HOTAData]) -> HOTAData:
+    """
+    Merge a list of HOTA data objects into a single aggregated object.
+    
+    Args:
+        hota_data_list: List of HOTAData objects to merge
+        
+    Returns:
+        Single merged HOTAData object
+        
+    Raises:
+        ValueError: If any video_id is None
+    """
     if len(hota_data_list) == 0:
         return HOTAData() ## create empty placeholder
     # composite together the HOTA_DATAs into a single HOTA_DATA
@@ -29,72 +42,6 @@ def merge_hota_data(hota_data_list: list[HOTAData]) -> HOTAData:
     global_hota_data._finalize()
     return global_hota_data
 
-
-def plot_hota(hota_data: HOTAData, output_dir: str):
-    import matplotlib.pyplot as plt
-    import os
-    
-    # Get unique metrics
-    dict_data = hota_data.get_dict()
-    del dict_data['frame']
-    del dict_data['video_id']
-    metrics = list(dict_data.keys())
-    x_vals = hota_data.iou_thresholds
-    
-    # Plot each metric in its own subplot
-    for metric_name in metrics:
-        # Filter rows for this metric
-        metric_data = dict_data[metric_name]
-        
-        
-        plt.figure(figsize=(10, 6))
-        plt.plot(x_vals, metric_data, '-')
-        plt.xlabel('Threshold Alpha')
-        plt.ylabel(f'{metric_name}')
-        plt.title(f'{metric_name}')
-        plt.grid(True, alpha=0.3)
-        
-        metric_plot_path = os.path.join(output_dir, f'{metric_name}.png')
-        plt.savefig(metric_plot_path)
-        plt.close()
-
-def plot_per_frame_hota_data(per_frame_hota_data: pd.DataFrame, output_dir: str):
-    import matplotlib.pyplot as plt
-    import os
-    
-    # Verify we have a single video_id
-    video_ids = per_frame_hota_data['video_id'].unique()
-    assert len(video_ids) == 1
-    video_id = video_ids[0]
-    
-    # Get unique metrics
-    metrics = per_frame_hota_data['metric'].unique()
-    
-    # Get all alpha columns (those starting with 'alpha_')
-    alpha_cols = [col for col in per_frame_hota_data.columns if col.startswith('alpha_')]
-    
-    # Plot each metric in its own subplot
-    for metric_name in metrics:
-        # Filter rows for this metric
-        metric_data = per_frame_hota_data[per_frame_hota_data['metric'] == metric_name]
-        
-        # Calculate metrics for all frames at once using groupby
-        grouped_metrics = metric_data.groupby('frame')[alpha_cols].mean().mean(axis=1).reset_index()
-        
-        # Sort by frame number
-        grouped_metrics = grouped_metrics.sort_values('frame')
-        
-        plt.figure(figsize=(10, 6))
-        plt.plot(grouped_metrics['frame'], grouped_metrics[0], '-')
-        plt.xlabel('Video Frame')
-        plt.ylabel(f'{metric_name}')
-        plt.title(f'{metric_name} - Video {video_id}')
-        plt.grid(True, alpha=0.3)
-        
-        metric_plot_path = os.path.join(output_dir, f'{video_id}_{metric_name}.png')
-        plt.savefig(metric_plot_path)
-        plt.close()
-        
 
 def compute_id_alignment_similarity_from_df(input_dat: FrameExtractionInputData, similarity_metric: str = 'iou') -> tuple[str, list[CostMatrixDataFrame]]:
     """
@@ -131,7 +78,6 @@ def compute_id_alignment_similarity_from_df(input_dat: FrameExtractionInputData,
         cm = compute_id_alignment_similarity(dat, similarity_metric)
         cm_list.append(cm)
     return input_dat.video_id, cm_list
-
 
 
 def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str = 'iou') -> CostMatrixDataFrame:
@@ -422,17 +368,19 @@ def calculate_box_ious(bboxes1: np.ndarray, bboxes2: np.ndarray, box_format='xyw
     Returns:
         Array of shape (N, M) containing pairwise IOU values
     """
+    if len(bboxes1) == 0 or len(bboxes2) == 0:
+        return np.zeros((len(bboxes1), len(bboxes2)))
+    
     # Convert to x0y0x1y1 format if needed - avoid unnecessary operations
     if box_format == 'xywh':
-        # Create views instead of copies where possible
-        boxes1 = np.empty_like(bboxes1)
-        boxes2 = np.empty_like(bboxes2)
-
-        # Compute coordinates directly
-        np.copyto(boxes1[:, :2], bboxes1[:, :2])
-        np.copyto(boxes2[:, :2], bboxes2[:, :2])
-        boxes1[:, 2:] = bboxes1[:, :2] + bboxes1[:, 2:]
-        boxes2[:, 2:] = bboxes2[:, :2] + bboxes2[:, 2:]
+        boxes1 = np.column_stack([
+            bboxes1[:, 0], bboxes1[:, 1], 
+            bboxes1[:, 0] + bboxes1[:, 2], bboxes1[:, 1] + bboxes1[:, 3]
+        ])
+        boxes2 = np.column_stack([
+            bboxes2[:, 0], bboxes2[:, 1], 
+            bboxes2[:, 0] + bboxes2[:, 2], bboxes2[:, 1] + bboxes2[:, 3]
+        ])
     elif box_format in ('x0y0x1y1', 'xyxy'):
         # Use direct references instead of copying
         boxes1, boxes2 = bboxes1, bboxes2

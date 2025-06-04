@@ -208,19 +208,19 @@ class HOTAData:
             
         return True
     
-    def add_TP_hashes(self, hashes: list[np.dtype[np.object_]], iou_threshold: float):
+    def _add_TP_hashes(self, hashes: list[np.dtype[np.object_]], iou_threshold: float):
         key = 'TP_hashes'
         if key not in self.sparse_data:
             self.sparse_data[key] = [set() for _ in range(len(self.iou_thresholds))]
         self.sparse_data[key][iou_threshold].update(hashes)
     
-    def add_FN_hashes(self, hashes: list[np.dtype[np.object_]], iou_threshold: float):
+    def _add_FN_hashes(self, hashes: list[np.dtype[np.object_]], iou_threshold: float):
         key = 'FN_hashes'
         if key not in self.sparse_data:
             self.sparse_data[key] = [set() for _ in range(len(self.iou_thresholds))]
         self.sparse_data[key][iou_threshold].update(hashes)
     
-    def add_FP_hashes(self, hashes: list[np.dtype[np.object_]], iou_threshold: float):
+    def _add_FP_hashes(self, hashes: list[np.dtype[np.object_]], iou_threshold: float):
         key = 'FP_hashes'
         if key not in self.sparse_data:
             self.sparse_data[key] = [set() for _ in range(len(self.iou_thresholds))]
@@ -396,10 +396,10 @@ class HOTAData:
                         non_matched_ref_hashes = sim_cost_matrix.i_hashes[~matched_ref_mask]
                         non_matched_comp_hashes = sim_cost_matrix.j_hashes[~matched_comp_mask]
                         
-                        self.add_TP_hashes(matched_ref_hashes, a)
-                        self.add_TP_hashes(matched_comp_hashes, a)
-                        self.add_FN_hashes(non_matched_ref_hashes, a)
-                        self.add_FP_hashes(non_matched_comp_hashes, a)
+                        self._add_TP_hashes(matched_ref_hashes, a)
+                        self._add_TP_hashes(matched_comp_hashes, a)
+                        self._add_FN_hashes(non_matched_ref_hashes, a)
+                        self._add_FP_hashes(non_matched_comp_hashes, a)
 
                 # Vectorized localization accuracy update
                 if len(sub_match_sim_vals) > 0:
@@ -417,8 +417,8 @@ class HOTAData:
             # Handle hashes for no-matches case
             if isinstance(sim_cost_matrix, CostMatrixDataFrame) and sim_cost_matrix.i_hashes is not None and sim_cost_matrix.j_hashes is not None:
                 for a in range(len(self.iou_thresholds)):
-                    self.add_FN_hashes(sim_cost_matrix.i_hashes, a)
-                    self.add_FP_hashes(sim_cost_matrix.j_hashes, a)
+                    self._add_FN_hashes(sim_cost_matrix.i_hashes, a)
+                    self._add_FP_hashes(sim_cost_matrix.j_hashes, a)
                     
         self._finalize()
         
