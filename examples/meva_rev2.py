@@ -14,7 +14,6 @@ from reid_hota import HOTAReIDEvaluator, HOTAConfig
 def load_data() -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
     # Get the directory where this script is located
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    script_dir = '/home/mmajursk/usnistgov/reid_hota/tests/data/meva_rid_short/'
     gt_fp = os.path.join(script_dir, 'ref')
     pred_fp = os.path.join(script_dir, 'comp')
 
