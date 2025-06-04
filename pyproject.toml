@@ -5,9 +5,13 @@ build-backend = "hatchling.build"
 [project]
 name = "reid_hota"
 dynamic = ["version"]
+authors = [
+  { name="Michael Majurski", email="michael.majurski@nist.gov" },
+]
 description = "Modified HOTA (Higher Order Tracking Accuracy) extended for ReID evaluation"
 readme = "README.md"
-requires-python = ">=3.12"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
 dependencies = [
     "numpy>=2.2.6",
     "pandas>=2.2.3",
@@ -23,3 +27,6 @@ packages = ["src/reid_hota"]
 
 [tool.pytest.ini_options]
 addopts = ["-s"]
+
+[project.urls]
+Homepage = "https://github.com/usnistgov/reid_hota"
