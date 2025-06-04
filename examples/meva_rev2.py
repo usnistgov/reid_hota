@@ -14,6 +14,7 @@ from reid_hota import HOTAReIDEvaluator, HOTAConfig
 def load_data() -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
     # Get the directory where this script is located
     script_dir = os.path.dirname(os.path.abspath(__file__))
+    script_dir = '/home/mmajursk/usnistgov/reid_hota/tests/data/meva_rid_short/'
     gt_fp = os.path.join(script_dir, 'ref')
     pred_fp = os.path.join(script_dir, 'comp')
 
@@ -23,6 +24,20 @@ def load_data() -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
     for fn in fns:
         gt_df = pd.read_csv(os.path.join(gt_fp, fn))
         pred_df = pd.read_csv(os.path.join(pred_fp, fn))
+
+        if 'frame_id' not in gt_df.columns:
+            gt_df['frame_id'] = gt_df['frame']
+        if 'frame_id' not in pred_df.columns:
+            pred_df['frame_id'] = pred_df['frame']
+        if 'w' not in gt_df.columns:
+            gt_df['w'] = gt_df['width']
+        if 'w' not in pred_df.columns:
+            pred_df['w'] = pred_df['width']
+        if 'h' not in gt_df.columns:
+            gt_df['h'] = gt_df['height']
+        if 'h' not in pred_df.columns:
+            pred_df['h'] = pred_df['height']
+        
 
         # add fake lat/lon/alt to the data
         gt_df['lat'] = np.random.rand(len(gt_df)) * 10
@@ -50,8 +65,9 @@ def hota_meva_subset():
 
     ref_dfs, comp_dfs = load_data()
 
+    # config = HOTAConfig(id_alignment_method='global', similarity_metric='iou', purge_non_matched_comp_ids=True)
     config = HOTAConfig(id_alignment_method='global', similarity_metric='iou', purge_non_matched_comp_ids=True)
-    evaluator = HOTAReIDEvaluator(n_workers=20, config=config)
+    evaluator = HOTAReIDEvaluator(n_workers=0, config=config)
     evaluator.evaluate(ref_dfs, comp_dfs)
     global_hota_data = evaluator.get_global_hota_data()
     per_video_hota_data = evaluator.get_per_video_hota_data()

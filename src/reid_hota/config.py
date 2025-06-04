@@ -45,7 +45,7 @@ class HOTAConfig:
     def validate(self) -> None:
         """Validate configuration parameters."""
         ID_ALIGNMENT_METHODS = ['global','per_video','per_frame']
-        SIMILARITY_METRICS = ['iou', 'latlonalt']
+        SIMILARITY_METRICS = ['iou', 'latlonalt', 'latlon']
 
         if self.id_alignment_method not in ID_ALIGNMENT_METHODS:
             raise ValueError(f"id_alignment_method must be one of: {ID_ALIGNMENT_METHODS}")

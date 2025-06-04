@@ -44,12 +44,14 @@ class HOTAReIDEvaluator:
             required_cols.remove('class_id')
         if not self.config.track_fp_fn_tp_box_hashes:
             required_cols.remove('box_hash')
-        if self.config.similarity_metric == 'latlonalt':
+        if self.config.similarity_metric == 'latlonalt' or self.config.similarity_metric == 'latlon':
             for col in ['x', 'y', 'w', 'h']:
                 required_cols.remove(col)
         if self.config.similarity_metric == 'iou':
             for col in ['lat', 'lon', 'alt']:
                 required_cols.remove(col)
+        if self.config.similarity_metric == 'latlon':
+            required_cols.remove('alt')
         
         return required_cols
 

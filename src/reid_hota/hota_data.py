@@ -375,12 +375,11 @@ class HOTAData:
                 threshold_mask = threshold_masks[:, a]
                 alpha_match_ref_ids = match_ref_ids[threshold_mask]
                 alpha_match_comp_ids = match_comp_ids[threshold_mask]
-                sub_match_sim_vals = matched_similarity_vals[threshold_mask]
                 
                 # Handle hash operations if needed
                 if isinstance(sim_cost_matrix, CostMatrixDataFrame) and sim_cost_matrix.i_hashes is not None and sim_cost_matrix.j_hashes is not None:
                     # Vectorized index lookup using pre-computed mappings
-                    if len(alpha_match_ref_ids) > 0:
+                    if np.any(threshold_mask): #len(alpha_match_ref_ids) > 0:
                         matched_ref_indices = np.array([ref_id_to_idx[id_val] for id_val in alpha_match_ref_ids], dtype=int)
                         matched_comp_indices = np.array([comp_id_to_idx[id_val] for id_val in alpha_match_comp_ids], dtype=int)
                         
@@ -402,7 +401,8 @@ class HOTAData:
                         self._add_FP_hashes(non_matched_comp_hashes, a)
 
                 # Vectorized localization accuracy update
-                if len(sub_match_sim_vals) > 0:
+                sub_match_sim_vals = matched_similarity_vals[threshold_mask]
+                if np.any(threshold_mask): #len(sub_match_sim_vals) > 0:
                     self.metrics.loc_a_unnorm[a] += float(np.sum(sub_match_sim_vals))
                     
                     # Batch update matches_counts - this is the main bottleneck we can't fully vectorize

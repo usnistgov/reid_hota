@@ -144,7 +144,13 @@ def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str 
         box_idx = [dat.col_names.index(col) for col in ['lat', 'lon', 'alt']]
         bb1 = dat.ref_np[:, box_idx].astype(float)
         bb2 = dat.comp_np[:, box_idx].astype(float)
-        cost_matrix = calculate_latlogalt_l2(bb1, bb2)
+        cost_matrix = calculate_latlonalt_l2(bb1, bb2)
+    elif similarity_metric == 'latlon':
+        # Create cost matrix and compute lat/lon distance
+        box_idx = [dat.col_names.index(col) for col in ['lat', 'lon']]
+        bb1 = dat.ref_np[:, box_idx].astype(float)
+        bb2 = dat.comp_np[:, box_idx].astype(float)
+        cost_matrix = calculate_latlon_l2(bb1, bb2)
     else:
         raise ValueError(f'Unsupported similarity metric: {similarity_metric}')
 
@@ -244,12 +250,13 @@ def process_jaccard_cost_matrix_chunk(video_id: str, matrices_chunk: list[CostMa
     for data in matrices_chunk:
         i_idx = np.fromiter((chunk_i_lookup[id_] for id_ in data.i_ids), dtype=int)
         j_idx = np.fromiter((chunk_j_lookup[id_] for id_ in data.j_ids), dtype=int)
-        
+
         chunk_i_counts[i_idx] += 1
         chunk_j_counts[j_idx] += 1
-        
-        cm = normalize_cost_matrix(data.cost_matrix.copy())
-        chunk_cost_sum[i_idx[:, np.newaxis], j_idx[np.newaxis, :]] += cm
+
+        if len(i_idx) > 0 and len(j_idx) > 0:
+            cm = normalize_cost_matrix(data.cost_matrix)
+            chunk_cost_sum[i_idx[:, np.newaxis], j_idx[np.newaxis, :]] += cm
     
     return video_id, chunk_i_ids, chunk_j_ids, chunk_i_counts, chunk_j_counts, chunk_cost_sum
 
@@ -294,6 +301,7 @@ def jaccard_cost_matrices(matrices_dict: dict[str, list[CostMatrixData]], return
         
         # Combine chunk results
         for _, chunk_i_ids, chunk_j_ids, chunk_i_counts, chunk_j_counts, chunk_cost_sum in results:
+
             # Map chunk indices to global indices
             i_global_idx = np.fromiter((ref_lookup[id_] for id_ in chunk_i_ids), dtype=int)
             j_global_idx = np.fromiter((comp_lookup[id_] for id_ in chunk_j_ids), dtype=int)
@@ -415,7 +423,7 @@ def calculate_box_ious(bboxes1: np.ndarray, bboxes2: np.ndarray, box_format='xyw
     return ious
 
 
-def calculate_latlogalt_l2(latlonalt1: np.ndarray, latlonalt2: np.ndarray):
+def calculate_latlonalt_l2(latlonalt1: np.ndarray, latlonalt2: np.ndarray):
     """
     Calculates the L2 Euclidean distance between points in 3D space (lat, lon, alt).
 
@@ -429,6 +437,30 @@ def calculate_latlogalt_l2(latlonalt1: np.ndarray, latlonalt2: np.ndarray):
     # Reshape to allow broadcasting: (N,3) -> (N,1,3) and (M,3) -> (1,M,3)
     points1 = latlonalt1[:, np.newaxis, :]
     points2 = latlonalt2[np.newaxis, :, :]
+    
+    # Calculate squared differences for all pairs
+    squared_diff = np.sum((points1 - points2) ** 2, axis=2)
+    # Take square root to get Euclidean distance
+    distances = np.sqrt(squared_diff)
+    similarities = np.exp(-distances / 10)
+    
+    return similarities
+
+
+def calculate_latlon_l2(latlon1: np.ndarray, latlon2: np.ndarray):
+    """
+    Calculates the L2 Euclidean distance between points in 2D space (lat, lont).
+
+    Args:
+        latlon1: Array of shape (N, 2) containing lat long
+        latlon2: Array of shape (M, 2) containing lat long
+
+    Returns:
+        Array of shape (N, M) containing pairwise L2 distances
+    """
+    # Reshape to allow broadcasting: (N,2) -> (N,1,2) and (M,2) -> (1,M,2)
+    points1 = latlon1[:, np.newaxis, :]
+    points2 = latlon2[np.newaxis, :, :]
     
     # Calculate squared differences for all pairs
     squared_diff = np.sum((points1 - points2) ** 2, axis=2)
@@ -450,10 +482,8 @@ def normalize_cost_matrix(cost_matrix: np.ndarray) -> np.ndarray:
 
     # Calculate denominator and normalize in one step where possible
     denom = row_sums + col_sums - cost_matrix
-    # Pre-compute the maximum denominator with epsilon
-    np.maximum(denom, epsilon, out=denom)
-    # Perform division in-place
-    np.divide(cost_matrix, denom, out=cost_matrix)
+    # Avoid division by zero by using np.divide with where
+    cost_matrix = np.divide(cost_matrix, denom, where=denom > epsilon, out=np.zeros_like(cost_matrix))
 
     return cost_matrix
 
