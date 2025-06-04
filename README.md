@@ -13,13 +13,21 @@
 
 ## Installation
 
-`pip install reid_hota`
+Using uv:
+```bash
+uv venv --python=3.12
+source .venv/bin/activate
+uv pip install reid_hota
+```
+
 
 Or from source:
 
 ```bash
 git clone https://github.com/usnistgov/reid_hota.git
 cd hota_reid
+uv venv --python=3.12
+source .venv/bin/activate
 uv sync
 ```
 
