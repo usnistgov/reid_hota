@@ -13,6 +13,10 @@
 
 ## Installation
 
+`pip install reid_hota`
+
+Or from source:
+
 ```bash
 git clone https://github.com/usnistgov/reid_hota.git
 cd hota_reid
