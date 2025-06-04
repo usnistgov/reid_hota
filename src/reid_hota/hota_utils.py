@@ -476,6 +476,10 @@ def calculate_latlon_l2(latlon1: np.ndarray, latlon2: np.ndarray):
 def normalize_cost_matrix(cost_matrix: np.ndarray) -> np.ndarray:
     epsilon = 1e-8
 
+    if np.size(cost_matrix) == 1:
+        # don't normalize single values to 1.0
+        return cost_matrix
+
     # Compute row and column sums once
     row_sums = np.sum(cost_matrix, axis=1, keepdims=True)
     col_sums = np.sum(cost_matrix, axis=0, keepdims=True)

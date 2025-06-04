@@ -36,7 +36,7 @@ class HOTAMetrics:
     
     # Location accuracy
     loc_a_unnorm: np.ndarray
-    loc_a: np.ndarray
+    loc_a: np.ndarray  # The average similarity score for matching detections
     
     # Association metrics
     ass_a: np.ndarray
@@ -46,7 +46,7 @@ class HOTAMetrics:
     # Detection metrics  
     det_a: np.ndarray
     det_re: np.ndarray
-    det_pr: np.ndarray
+    det_pr: np.ndarray  # equivalent to precision used in mAP
     
     # Final metrics
     hota: np.ndarray
@@ -373,13 +373,23 @@ class HOTAData:
             for a in range(len(self.iou_thresholds)):
                 # Get matches for this threshold using pre-computed mask
                 threshold_mask = threshold_masks[:, a]
-                alpha_match_ref_ids = match_ref_ids[threshold_mask]
-                alpha_match_comp_ids = match_comp_ids[threshold_mask]
+                if np.any(threshold_mask):
+
+                    alpha_match_ref_ids = match_ref_ids[threshold_mask]
+                    alpha_match_comp_ids = match_comp_ids[threshold_mask]
+                    sub_match_sim_vals = matched_similarity_vals[threshold_mask]
+                    # Vectorized localization accuracy update
+                    self.metrics.loc_a_unnorm[a] += float(np.sum(sub_match_sim_vals))
+                    
+                    # Batch update matches_counts - this is the main bottleneck we can't fully vectorize
+                    # due to the sparse matrix structure, but we can optimize the loop
+                    for ref_id, comp_id in zip(alpha_match_ref_ids, alpha_match_comp_ids):
+                        self.sparse_data['matches_counts'][a].add_at(ref_id, comp_id, 1)
                 
-                # Handle hash operations if needed
-                if isinstance(sim_cost_matrix, CostMatrixDataFrame) and sim_cost_matrix.i_hashes is not None and sim_cost_matrix.j_hashes is not None:
+                    # Handle hash operations if needed
+                    if isinstance(sim_cost_matrix, CostMatrixDataFrame) and sim_cost_matrix.i_hashes is not None and sim_cost_matrix.j_hashes is not None:
                     # Vectorized index lookup using pre-computed mappings
-                    if np.any(threshold_mask): #len(alpha_match_ref_ids) > 0:
+                    
                         matched_ref_indices = np.array([ref_id_to_idx[id_val] for id_val in alpha_match_ref_ids], dtype=int)
                         matched_comp_indices = np.array([comp_id_to_idx[id_val] for id_val in alpha_match_comp_ids], dtype=int)
                         
@@ -399,16 +409,7 @@ class HOTAData:
                         self._add_TP_hashes(matched_comp_hashes, a)
                         self._add_FN_hashes(non_matched_ref_hashes, a)
                         self._add_FP_hashes(non_matched_comp_hashes, a)
-
-                # Vectorized localization accuracy update
-                sub_match_sim_vals = matched_similarity_vals[threshold_mask]
-                if np.any(threshold_mask): #len(sub_match_sim_vals) > 0:
-                    self.metrics.loc_a_unnorm[a] += float(np.sum(sub_match_sim_vals))
                     
-                    # Batch update matches_counts - this is the main bottleneck we can't fully vectorize
-                    # due to the sparse matrix structure, but we can optimize the loop
-                    for ref_id, comp_id in zip(alpha_match_ref_ids, alpha_match_comp_ids):
-                        self.sparse_data['matches_counts'][a].add_at(ref_id, comp_id, 1)
         else:
             # No matches case - vectorized update
             self.metrics.fn += num_lcl_ref

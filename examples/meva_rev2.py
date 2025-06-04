@@ -66,8 +66,8 @@ def hota_meva_subset():
     ref_dfs, comp_dfs = load_data()
 
     # config = HOTAConfig(id_alignment_method='global', similarity_metric='iou', purge_non_matched_comp_ids=True)
-    config = HOTAConfig(id_alignment_method='global', similarity_metric='iou', purge_non_matched_comp_ids=True)
-    evaluator = HOTAReIDEvaluator(n_workers=0, config=config)
+    config = HOTAConfig(id_alignment_method='global', similarity_metric='latlon', purge_non_matched_comp_ids=True)
+    evaluator = HOTAReIDEvaluator(n_workers=20, config=config)
     evaluator.evaluate(ref_dfs, comp_dfs)
     global_hota_data = evaluator.get_global_hota_data()
     per_video_hota_data = evaluator.get_per_video_hota_data()
