@@ -189,29 +189,29 @@ class HOTAReIDEvaluator:
         print(f"Number of frames: {nb_frames}")
         print(f"fps: {nb_frames / (time.time() - start_time)}")
 
-    def get_results(self):
+    def get_results(self) -> tuple[dict, dict, dict]:
         """
         Get the results of the evaluation
         """
-        return self.global_hota_data, self.per_video_hota_data, self.per_frame_hota_data
+        return self.global_hota_data.get_dict(), self.per_video_hota_data.get_dict(), self.per_frame_hota_data.get_dict()
     
-    def get_global_hota_data(self):
+    def get_global_hota_data(self) -> dict:
         """
         Get the global HOTA data
         """
-        return self.global_hota_data
+        return self.global_hota_data.get_dict()
     
-    def get_per_video_hota_data(self):
+    def get_per_video_hota_data(self) -> dict:
         """
         Get the per-video HOTA data
         """
-        return self.per_video_hota_data
+        return self.per_video_hota_data.get_dict()
     
-    def get_per_frame_hota_data(self):
+    def get_per_frame_hota_data(self) -> dict:
         """
         Get the per-frame HOTA data
         """
-        return self.per_frame_hota_data
+        return self.per_frame_hota_data.get_dict()
     
     def export_to_file(self, output_dir: str, save_per_frame: bool = True, save_per_video: bool = True):
         if self.global_hota_data is None:

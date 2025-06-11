@@ -47,9 +47,9 @@ evaluator = HOTAReIDEvaluator(n_workers=20, config=config)
 # evaluate on data
 evaluator.evaluate(ref_dfs, comp_dfs)
 # extract results
-global_hota_data = evaluator.get_global_hota_data().get_dict()
-per_video_hota_data = evaluator.get_per_video_hota_data()
-per_frame_hota_data = evaluator.get_per_frame_hota_data()
+global_hota_data = evaluator.get_global_hota_data()  # returns a dict
+per_video_hota_data = evaluator.get_per_video_hota_data()  # returns a dict
+per_frame_hota_data = evaluator.get_per_frame_hota_data()  # returns a dict
 
 print(f"HOTA-ReID Score: {global_hota_data['HOTA']:.3f}")
 ```

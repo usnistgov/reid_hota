@@ -8,14 +8,11 @@ def validate_results(global_hota_data, gt_filepath, tol=1e-4):
 
     # don't validate counts type items
     keys_to_validate = ['TP','FP','FN','LocA','HOTA','AssA', 'AssRe', 'AssPr', 'DetA', 'DetRe', 'DetPr', 'OWTA', 'IDF1']
-
-    # Get data dictionary from HOTAData object
-    hota_data_dict = global_hota_data.get_dict()
     
     for key in keys_to_validate:
-        if not np.allclose(hota_data_dict[key], gt_results[key], atol=tol):
+        if not np.allclose(global_hota_data[key], gt_results[key], atol=tol):
             print(f"Failed on key: {key}")
-            print(f"  difference: {hota_data_dict[key] - gt_results[key]}")
+            print(f"  difference: {global_hota_data[key] - gt_results[key]}")
             failed_keys.append(key)
     
     if len(failed_keys) > 0:

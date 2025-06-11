@@ -14,6 +14,7 @@ from reid_hota import HOTAReIDEvaluator, HOTAConfig
 def load_data() -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
     # Get the directory where this script is located
     script_dir = os.path.dirname(os.path.abspath(__file__))
+    script_dir = '/home/mmajursk/usnistgov/reid_hota/tests/data/meva_rid_short/'
     gt_fp = os.path.join(script_dir, 'ref')
     pred_fp = os.path.join(script_dir, 'comp')
 
@@ -76,8 +77,7 @@ def hota_meva_subset():
 
 
     print("combined HOTA data keys (at 0.5):")
-    idx = np.where(global_hota_data.iou_thresholds == 0.5)[0][0]
-    global_hota_data = global_hota_data.get_dict()
+    idx = np.where(global_hota_data['IOU Thresholds'] == 0.5)[0][0]
     for key in global_hota_data.keys():
         val = global_hota_data[key]
         if val is not None:

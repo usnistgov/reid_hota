@@ -467,6 +467,8 @@ def calculate_latlon_l2(latlon1: np.ndarray, latlon2: np.ndarray):
     
     # Take square root to get Euclidean distance
     distances = np.sqrt(squared_diff)
+    # use exp(-d/10) to get a [0,1] value that decays from 1 to 0 as distances increase
+    # the d/10 calibrates the distance to similarity to better utilize the [0,1] range for normal inter-human distances
     similarities = np.exp(-distances / 10)
     
     return similarities
