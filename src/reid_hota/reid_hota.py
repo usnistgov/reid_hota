@@ -16,7 +16,7 @@ class HOTAReIDEvaluator:
     ID alignment strategies.
     """
     
-    REQUIRED_COLUMNS = ['frame_id', 'object_id', 'x', 'y', 'w', 'h', 'class_id', 'lat', 'lon', 'alt', 'box_hash']
+    REQUIRED_COLUMNS = ['frame', 'object_id', 'x', 'y', 'w', 'h', 'class_id', 'lat', 'lon', 'alt', 'box_hash']
 
     def __init__(self, n_workers: int = 0, config: HOTAConfig = HOTAConfig()):
         """
@@ -205,13 +205,21 @@ class HOTAReIDEvaluator:
         """
         Get the per-video HOTA data
         """
-        return self.per_video_hota_data.get_dict()
+        res = dict()
+        for video_id, video_data in self.per_video_hota_data.items():
+            res[video_id] = video_data.get_dict()
+        return res
     
     def get_per_frame_hota_data(self) -> dict:
         """
         Get the per-frame HOTA data
         """
-        return self.per_frame_hota_data.get_dict()
+        res = dict()
+        for video_id, frame_data in self.per_frame_hota_data.items():
+            res[video_id] = dict()
+            for frame_dat in frame_data:
+                res[video_id][frame_dat.frame] = frame_dat.get_dict()
+        return res
     
     def export_to_file(self, output_dir: str, save_per_frame: bool = True, save_per_video: bool = True):
         if self.global_hota_data is None:

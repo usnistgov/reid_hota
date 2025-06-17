@@ -54,8 +54,8 @@ def compute_id_alignment_similarity_from_df(input_dat: FrameExtractionInputData,
     
     # Group by frame
     # return pd.api.typing.DataFrameGroupBy
-    ref_frames_df = ref_df.groupby('frame_id')
-    comp_frames_df = comp_df.groupby('frame_id')
+    ref_frames_df = ref_df.groupby('frame')
+    comp_frames_df = comp_df.groupby('frame')
 
     k1 = set(ref_frames_df.groups.keys())
     k2 = set(comp_frames_df.groups.keys())
@@ -85,7 +85,7 @@ def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str 
     Compute alignment costs between reference and comparison frames.
     """
 
-    f_idx = dat.col_names.index('frame_id')
+    f_idx = dat.col_names.index('frame')
     id_idx = dat.col_names.index('object_id')
     hash_idx = dat.col_names.index('box_hash') if 'box_hash' in dat.col_names else None
     # Quick validation using values access
@@ -338,8 +338,8 @@ def extract_per_frame_data(input_dat: FrameExtractionInputData, class_id: np.dty
     
     # Group by frame
     # return pd.api.typing.DataFrameGroupBy
-    ref_frames_df = ref_df.groupby('frame_id')
-    comp_frames_df = comp_df.groupby('frame_id')
+    ref_frames_df = ref_df.groupby('frame')
+    comp_frames_df = comp_df.groupby('frame')
 
     k1 = set(ref_frames_df.groups.keys())
     k2 = set(comp_frames_df.groups.keys())

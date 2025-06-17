@@ -36,16 +36,17 @@ class HOTAConfig:
     iou_thresholds: NDArray[np.float64] = field(default_factory=lambda: np.arange(0.1, 0.99, 0.1))
     """Array of IoU thresholds to evaluate at."""
     
-    similarity_metric: Literal['iou', 'latlonalt'] = 'iou'
+    similarity_metric: Literal['iou', 'latlon', 'latlonalt'] = 'iou'
     """Similarity metric to use:
     - 'iou': Intersection over Union for bounding boxes
+    - 'latlon': L2 distance for lat/lon coordinates
     - 'latlonalt': L2 distance for lat/lon/alt coordinates
     """
 
     def validate(self) -> None:
         """Validate configuration parameters."""
         ID_ALIGNMENT_METHODS = ['global','per_video','per_frame']
-        SIMILARITY_METRICS = ['iou', 'latlonalt', 'latlon']
+        SIMILARITY_METRICS = ['iou', 'latlon', 'latlonalt']
 
         if self.id_alignment_method not in ID_ALIGNMENT_METHODS:
             raise ValueError(f"id_alignment_method must be one of: {ID_ALIGNMENT_METHODS}")

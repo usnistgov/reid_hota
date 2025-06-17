@@ -36,9 +36,9 @@ def tracking_data() -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
 
         
         if 'frame' in gt_df.columns:
-            gt_df['frame_id'] = gt_df['frame']
+            gt_df['frame'] = gt_df['frame']
         if 'frame' in pred_df.columns:
-            pred_df['frame_id'] = pred_df['frame']
+            pred_df['frame'] = pred_df['frame']
         # Rename width column to w if it exists
         if 'width' in gt_df.columns:
             gt_df['w'] = gt_df['width']
@@ -63,9 +63,9 @@ def tracking_data() -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
         # Create a new random box for each frame
         # Create new rows for each frame this tests the FP purge
         # new_rows = []
-        # for frame_id in gt_df['frame_id'].unique():
+        # for frame in gt_df['frame'].unique():
         #     new_row = {
-        #         'frame_id': frame_id,
+        #         'frame': frame,
         #         'object_id': int(np.random.rand() * 100000) + 100000,
         #         'x': np.random.rand() * 1920,  # Random x coordinate
         #         'y': np.random.rand() * 1080,  # Random y coordinate
@@ -82,9 +82,9 @@ def tracking_data() -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
         # new_df = pd.DataFrame(new_rows)
         # pred_df = pd.concat([pred_df, new_df], ignore_index=True)
 
-        # hash(f"frame_id:{frame_id} object_id:{object_id} x:{x} y:{y} w:{w} h:{h} class_id:{class_id} lat:{lat} lon:{lon} alt:{alt}")
-        pred_df['box_hash'] = pred_df.apply(lambda row: str(hash(f"frame_id:{row['frame_id']} object_id:{row['object_id']} x:{row['x']} y:{row['y']} w:{row['w']} h:{row['h']} class_id:{row['class_id']} lat:{row['lat']} lon:{row['lon']} alt:{row['alt']}")), axis=1)
-        gt_df['box_hash'] = gt_df.apply(lambda row: str(hash(f"frame_id:{row['frame_id']} object_id:{row['object_id']} x:{row['x']} y:{row['y']} w:{row['w']} h:{row['h']} class_id:{row['class_id']} lat:{row['lat']} lon:{row['lon']} alt:{row['alt']}")), axis=1)
+        # hash(f"frame:{frame} object_id:{object_id} x:{x} y:{y} w:{w} h:{h} class_id:{class_id} lat:{lat} lon:{lon} alt:{alt}")
+        pred_df['box_hash'] = pred_df.apply(lambda row: str(hash(f"frame:{row['frame']} object_id:{row['object_id']} x:{row['x']} y:{row['y']} w:{row['w']} h:{row['h']} class_id:{row['class_id']} lat:{row['lat']} lon:{row['lon']} alt:{row['alt']}")), axis=1)
+        gt_df['box_hash'] = gt_df.apply(lambda row: str(hash(f"frame:{row['frame']} object_id:{row['object_id']} x:{row['x']} y:{row['y']} w:{row['w']} h:{row['h']} class_id:{row['class_id']} lat:{row['lat']} lon:{row['lon']} alt:{row['alt']}")), axis=1)
 
         
 
@@ -95,7 +95,7 @@ def tracking_data() -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
     # Print statistics about the number of frames in each video
     frame_counts = []
     for video_id in ref_dfs:
-        unique_frames = ref_dfs[video_id]['frame_id'].nunique()
+        unique_frames = ref_dfs[video_id]['frame'].nunique()
         frame_counts.append(unique_frames)
 
     # Print class IDs present in both ref_dfs and comp_dfs
@@ -139,6 +139,8 @@ class TestHOTA_meva_reid_short_global_id_alignment:
         evaluator = HOTAReIDEvaluator(n_workers=20, config=config)
         evaluator.evaluate(ref_dfs, comp_dfs)
         global_hota_data = evaluator.get_global_hota_data()
+        per_video_hota_data = evaluator.get_per_video_hota_data()
+        per_frame_hota_data = evaluator.get_per_frame_hota_data()
         
         gt_fp = os.path.join(os.path.dirname(__file__), 'data', 'meva_rid_short', 'results_global_id_alignment.json')
         validate_results(global_hota_data, gt_fp)  # raises AssertionError if any keys fail
@@ -157,6 +159,8 @@ class TestHOTA_meva_reid_short_video_id_alignment:
         evaluator = HOTAReIDEvaluator(n_workers=20, config=config)
         evaluator.evaluate(ref_dfs, comp_dfs)
         global_hota_data = evaluator.get_global_hota_data()
+        per_video_hota_data = evaluator.get_per_video_hota_data()
+        per_frame_hota_data = evaluator.get_per_frame_hota_data()
 
         gt_fp = os.path.join(os.path.dirname(__file__), 'data', 'meva_rid_short', 'results_video_id_alignment.json')
         validate_results(global_hota_data, gt_fp)  # raises AssertionError if any keys fail
@@ -174,6 +178,8 @@ class TestHOTA_meva_reid_short_frame_id_alignment:
         evaluator = HOTAReIDEvaluator(n_workers=20, config=config)
         evaluator.evaluate(ref_dfs, comp_dfs)
         global_hota_data = evaluator.get_global_hota_data()
+        per_video_hota_data = evaluator.get_per_video_hota_data()
+        per_frame_hota_data = evaluator.get_per_frame_hota_data()
 
         gt_fp = os.path.join(os.path.dirname(__file__), 'data', 'meva_rid_short', 'results_frame_id_alignment.json')
         validate_results(global_hota_data, gt_fp)  # raises AssertionError if any keys fail

@@ -1,4 +1,4 @@
-frame_id,object_id,x,y,w,h,confidence,class_id,visibility
+frame,object_id,x,y,w,h,confidence,class_id,visibility
 582,1,1161.0,324.0,51.0,199.0,1,1,1
 591,1,1083.0,276.0,142.0,276.0,1,1,1
 594,1,1072.0,277.0,143.0,277.0,1,1,1
