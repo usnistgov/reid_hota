@@ -424,6 +424,10 @@ class HOTAData:
         self._finalize()
         
     def _finalize(self):
+        self.metrics.ass_a = np.zeros(len(self.iou_thresholds), dtype=float)
+        self.metrics.ass_re = np.zeros(len(self.iou_thresholds), dtype=float)
+        self.metrics.ass_pr = np.zeros(len(self.iou_thresholds), dtype=float)
+
         for a, _ in enumerate(self.iou_thresholds):
             for k, v in self.sparse_data['matches_counts'][a].data_store.items():
                 rid_count = self.sparse_data['ref_id_counts'].get(k[0])
