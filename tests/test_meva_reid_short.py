@@ -135,7 +135,7 @@ class TestHOTA_meva_reid_short_global_id_alignment:
         """Test the HOTA metric computation."""
         ref_dfs, comp_dfs = tracking_data
 
-        config = HOTAConfig(id_alignment_method='global', similarity_metric='iou')
+        config = HOTAConfig(id_alignment_method='global', similarity_metric='iou', suppress_print_statements=True)
         evaluator = HOTAReIDEvaluator(n_workers=20, config=config)
         evaluator.evaluate(ref_dfs, comp_dfs)
         global_hota_data = evaluator.get_global_hota_data()

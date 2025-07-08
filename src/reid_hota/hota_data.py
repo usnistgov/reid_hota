@@ -297,11 +297,12 @@ class HOTAData:
         
         # Validate similarity values are finite
         if np.any(~np.isfinite(matched_similarity_vals)):
-            print(f"Non-finite value in matched_similarity_vals for video {sim_cost_matrix.video_id} frame {sim_cost_matrix.frame}")
-            print(f"sim_cost_matrix.i_ids: {sim_cost_matrix.i_ids}")
-            print(f"sim_cost_matrix.j_ids: {sim_cost_matrix.j_ids}")
-            print(f"sim_cost_matrix.cost_matrix: {sim_cost_matrix.cost_matrix}")
-            raise ValueError("Non-finite value in matched_similarity_vals")
+            raise ValueError(
+                f"Non-finite value in matched_similarity_vals for video {sim_cost_matrix.video_id} frame {sim_cost_matrix.frame}\n"
+                f"  sim_cost_matrix.i_ids: {sim_cost_matrix.i_ids}\n"
+                f"  sim_cost_matrix.j_ids: {sim_cost_matrix.j_ids}\n"
+                f"  sim_cost_matrix.cost_matrix: {sim_cost_matrix.cost_matrix}"
+            )
         
         return matched_similarity_vals
 

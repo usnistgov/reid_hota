@@ -43,6 +43,9 @@ class HOTAConfig:
     - 'latlonalt': L2 distance for lat/lon/alt coordinates
     """
 
+    suppress_print_statements: bool = False
+    """Whether to suppress print statements. This is useful for running the evaluator within a larger context."""
+
     def validate(self) -> None:
         """Validate configuration parameters."""
         ID_ALIGNMENT_METHODS = ['global','per_video','per_frame']

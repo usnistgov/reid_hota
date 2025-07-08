@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 import time
+import warnings
 
 from .hota_utils import compute_cost_per_video_per_frame, jaccard_cost_matrices, build_HOTA_objects, merge_hota_data
 from .config import HOTAConfig
@@ -65,7 +66,8 @@ class HOTAReIDEvaluator:
             A dictionary of comparison dataframes, where the keys are the video ids and the values are the dataframes
         """
 
-        print(f"=== Computing ReID HOTA metrics ===")
+        if not self.config.suppress_print_statements:
+            print(f"=== Computing ReID HOTA metrics ===")
         # Assert that ref_dfs is a dictionary of pandas dataframes
         assert isinstance(ref_dfs, dict), f"ref_dfs must be a dictionary, got {type(ref_dfs)}"
         for video_id, df in ref_dfs.items():
@@ -102,7 +104,8 @@ class HOTAReIDEvaluator:
 
         # Keep only the relevant classes
         if self.config.class_ids is not None:
-            print(f"Keeping only the relevant class_ids: {self.class_ids}")
+            if not self.config.suppress_print_statements:
+                print(f"Keeping only the relevant class_ids: {self.class_ids}")
             for key in ref_dfs.keys():
                 ref_dfs[key] = ref_dfs[key][ref_dfs[key]['class_id'].isin(self.class_ids)]
             for key in comp_dfs.keys():
@@ -117,9 +120,11 @@ class HOTAReIDEvaluator:
         # returns a list[CostMatrixData] per video
         # each CostMatrixData stores the video_id and frame number for later reference
         st = time.time()
-        print(f"Computing cost matrix for every frame")
+        if not self.config.suppress_print_statements:
+            print(f"Computing cost matrix for every frame")
         id_similarity_per_video = compute_cost_per_video_per_frame(ref_dfs, comp_dfs, self.n_workers, self.config.similarity_metric)
-        print(f"  took: {time.time() - st} seconds")
+        if not self.config.suppress_print_statements:
+            print(f"  took: {time.time() - st} seconds")
 
 
         # ************************************
@@ -127,7 +132,8 @@ class HOTAReIDEvaluator:
         # jaccard is used to merge together the individual cost matrices, instead of average
         # ************************************
         st = time.time()
-        print(f"Jaccard merge of per-frame cost")
+        if not self.config.suppress_print_statements:
+            print(f"Jaccard merge of per-frame cost")
         
         # None is a placeholder to tell later HOTA construction to use per-frame id alignment
         per_video_cost_matrices = None
@@ -154,7 +160,8 @@ class HOTAReIDEvaluator:
             global_cost_matrix = None
 
         # cost_matrix_data is the global id alignment cost matrix for all videos
-        print(f"  took: {time.time() - st} seconds")
+        if not self.config.suppress_print_statements:
+            print(f"  took: {time.time() - st} seconds")
 
         
 
@@ -163,7 +170,8 @@ class HOTAReIDEvaluator:
         # Compute the per-frame HOTA data that will later be turned into HOTA data
         # ************************************
         st = time.time()
-        print(f"Computing per-frame HOTA data")
+        if not self.config.suppress_print_statements:
+            print(f"Computing per-frame HOTA data")
         
         # Maintain video structure by processing each video separately
         self.per_video_hota_data, self.per_frame_hota_data = build_HOTA_objects(id_similarity_per_video, 
@@ -172,22 +180,26 @@ class HOTAReIDEvaluator:
                                                                                  global_cost_matrix=global_cost_matrix, 
                                                                                  n_workers=self.n_workers)
         
-        print(f"  took: {time.time() - st} seconds")
+        if not self.config.suppress_print_statements:
+            print(f"  took: {time.time() - st} seconds")
 
 
         # ************************************
         # Merge the per-frame hota data together into the global HOTA metric data class
         # ************************************
         st = time.time()
-        print(f"Merging HOTA data")
+        if not self.config.suppress_print_statements:
+            print(f"Merging HOTA data")
         self.global_hota_data = merge_hota_data(list(self.per_video_hota_data.values()))
         self.global_hota_data.video_id = None  # remove the video_id from the global HOTA_DATA object
-        print(f"  took: {time.time() - st} seconds")
+        if not self.config.suppress_print_statements:
+            print(f"  took: {time.time() - st} seconds")
 
         nb_frames = sum([len(v) for v in id_similarity_per_video.values()])
-        print(f"Total time taken: {time.time() - start_time} seconds")
-        print(f"Number of frames: {nb_frames}")
-        print(f"fps: {nb_frames / (time.time() - start_time)}")
+        if not self.config.suppress_print_statements:
+            print(f"Total time taken: {time.time() - start_time} seconds")
+            print(f"Number of frames: {nb_frames}")
+            print(f"fps: {nb_frames / (time.time() - start_time)}")
 
     def get_results(self) -> tuple[dict, dict, dict]:
         """
@@ -223,13 +235,13 @@ class HOTAReIDEvaluator:
     
     def export_to_file(self, output_dir: str, save_per_frame: bool = True, save_per_video: bool = True):
         if self.global_hota_data is None:
-            print("Warning: Global HOTA data is not available")
+            warnings.warn("Global HOTA data is not available")
             return
         if self.per_video_hota_data is None:
-            print("Warning: Per-video HOTA data is not available")
+            warnings.warn("Per-video HOTA data is not available")
             return
         if self.per_frame_hota_data is None:
-            print("Warning: Per-frame HOTA data is not available")
+            warnings.warn("Per-frame HOTA data is not available")
             return
 
         os.makedirs(output_dir, exist_ok=True)
