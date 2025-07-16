@@ -54,7 +54,7 @@ for fn in fns:
     comp_dfs[fn.replace('.csv', '')] = pred_df
 
 # create the Config controlling the Metric calculation
-config = HOTAConfig(id_alignment_method='global', similarity_metric='iou', purge_non_matched_comp_ids=True)
+config = HOTAConfig(id_alignment_method='global', similarity_metric='iou')
 # create the evaluator
 evaluator = HOTAReIDEvaluator(n_workers=20, config=config)
 # evaluate on data
@@ -132,9 +132,10 @@ class HOTAConfig:
     track_fp_fn_tp_box_hashes: bool = False
     """Whether to track box hashes for detailed FP/FN/TP analysis."""
     
-    purge_non_matched_comp_ids: bool = False
-    """Whether to remove non-matched comparison IDs to reduce FP counts 
-    for data without full dense annotations. Purged ids are counted in an unmatched_FP field."""
+    reference_contains_dense_annotations: bool = False
+    """Whether the reference data dataframes contain dense annotations. If False, non-matched comparison IDs are removed to reduce FP counts to only those global ids which have a match in the reference data. The non-matching comparison ids are counted in an UnmatchedFP field in the HOTA data.
+    Consider the case where only 2 objects are tracked in a crowded ground truth video file. The comparison results will likely have many more boxes for the confuser objects for which GT data is missing (this is non-dense ground truth). In other words, this flag is useful when the reference/ground truth data which does not have full dense annotations of all objects in the video. 
+    """
     
     iou_thresholds: NDArray[np.float64] = field(default_factory=lambda: np.arange(0.1, 0.99, 0.1))
     """Array of IoU thresholds to evaluate at."""
@@ -149,7 +150,7 @@ class HOTAConfig:
 
 ### Global Outputs
 
-Once a call to `.evalauate(ref_dfs, comp_dfs)` has been made, the `evaluator` object contains all HOTA results.
+Once a call to `evalauate(ref_dfs, comp_dfs)` has been made, the `evaluator` object contains all HOTA results.
 
 Three sets of evaluation results are generated, first is the global (across all videos) HOTA ReID metrics.
 Additionally, there is a per_video HOTA data, and a per_frame HOTA data.
@@ -207,7 +208,7 @@ The IOU thresholds match what you specified in the `HOTAConfig`.
 The video_id will be None for global results, or have the video id (key into ref_dfs dict) for `per_video` and `per_frame` results.
 
 - `frame` will be None unless its the per_frame results.
-- `TP`, `FP`, `FN` will contain TP/FP/FN counts per IOU threshold. UnmatchedFP will contain any FP counts for which there was no assignment to a ground truth track. This behavior can be controlled using `purge_non_matched_comp_ids` in the config.
+- `TP`, `FP`, `FN` will contain TP/FP/FN counts per IOU threshold. UnmatchedFP will contain any FP counts for which there was no assignment to a ground truth track. This behavior can be controlled using `reference_contains_dense_annotations` in the config.
 - `LocA` is effectivly the average matching box IOU.
 - `HOTA` is the final composite metric. HOTA = sqrt(DetA * AssA)
 - `AssA` is the association accuracy.

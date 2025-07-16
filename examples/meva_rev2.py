@@ -61,8 +61,8 @@ def hota_meva_subset():
 
     ref_dfs, comp_dfs = load_data()
 
-    # config = HOTAConfig(id_alignment_method='global', similarity_metric='iou', purge_non_matched_comp_ids=True)
-    config = HOTAConfig(id_alignment_method='global', similarity_metric='latlon', purge_non_matched_comp_ids=True)
+    # config = HOTAConfig(id_alignment_method='global', similarity_metric='iou', reference_contains_dense_annotations=True)
+    config = HOTAConfig(id_alignment_method='global', similarity_metric='latlon', reference_contains_dense_annotations=False)
     evaluator = HOTAReIDEvaluator(n_workers=20, config=config)
     evaluator.evaluate(ref_dfs, comp_dfs)
     global_hota_data = evaluator.get_global_hota_data()

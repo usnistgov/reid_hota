@@ -29,9 +29,10 @@ class HOTAConfig:
     track_fp_fn_tp_box_hashes: bool = False
     """Whether to track box hashes for detailed FP/FN/TP analysis."""
     
-    purge_non_matched_comp_ids: bool = False
-    """Whether to remove non-matched comparison IDs to reduce FP counts 
-    for data without full dense annotations. Purged ids are counted in an unmatched_FP field."""
+    reference_contains_dense_annotations: bool = False
+    """Whether the reference data dataframes contain dense annotations. If False, non-matched comparison IDs are removed to reduce FP counts to only those global ids which have a match in the reference data. The non-matching comparison ids are counted in an UnmatchedFP field in the HOTA data.
+    Consider the case where only 2 objects are tracked in a crowded ground truth video file. The comparison results will likely have many more boxes for the confuser objects for which GT data is missing (this is non-dense ground truth). In other words, this flag is useful when the reference/ground truth data which does not have full dense annotations of all objects in the video. 
+    """
     
     iou_thresholds: NDArray[np.float64] = field(default_factory=lambda: np.arange(0.1, 0.99, 0.1))
     """Array of IoU thresholds to evaluate at."""

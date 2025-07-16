@@ -73,11 +73,11 @@ class HOTAData:
             sim_cost_matrix: The cost matrix for this frame.
             gt_to_tracker_id_map: A map from ground truth ids to tracker ids.
             iou_thresholds: Set of IoU thresholds to compute metrics for.
-            purge_non_matched_comp_ids: Whether to purge non-matched comparison ids to reduce FP counts from video data that does not have full dense annotations of all objects
+            reference_contains_dense_annotations: Whether to the reference data contains dense annotations. If False, non-matched comparison ids are not counted towards the FP count. In other words, only those comparison global ids which have a match in the reference data count as normal FP. The non-matching comparison ids are counted in an UnmatchedFP field in the HOTA data.
             gids: The ground truth ids to use for the HOTA metric. If provided, all other ids are ignored.
         """
 
-        self.purge_non_matched_comp_ids = config.purge_non_matched_comp_ids
+        self.reference_contains_dense_annotations = config.reference_contains_dense_annotations
         self.iou_thresholds = np.asarray(config.iou_thresholds)
         self.gids = config.gids
 
@@ -329,7 +329,7 @@ class HOTAData:
 
         # Step 5: Optional filtering of non-matched comparison IDs
         # This removes tracker IDs that don't have corresponding ground truth matches, reducing FP counts from video data that does not have full dense annotations of all objects
-        if self.purge_non_matched_comp_ids:
+        if not self.reference_contains_dense_annotations:
             lcl_comp_ids, match_comp_ids, unmatched_fp = self._apply_comp_id_filtering(lcl_comp_ids, match_comp_ids, gt_to_tracker_id_map)
             self.metrics.unmatched_fp += unmatched_fp
 
