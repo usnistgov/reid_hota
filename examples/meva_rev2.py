@@ -83,9 +83,62 @@ def hota_meva_subset():
             else:
                 print(f"{key}: {global_hota_data[key]}")
 
+
+def hota_meva_nano():
+    """Test the HOTA metric computation."""
+
+    
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    gt_fp = os.path.join(script_dir, 'mevid-nano')
+
+    fns = [fn for fn in os.listdir(gt_fp) if fn.endswith('.parquet')]
+    ref_dfs = {}
+    comp_dfs = {}
+    for fn in fns:
+        gt_df = pd.read_parquet(os.path.join(gt_fp, fn))
+        pred_df = gt_df.copy()
+
+        pred_df['x'] += np.random.rand(len(pred_df)) * 10
+        pred_df['y'] += np.random.rand(len(pred_df)) * 10
+
+        pred_df['w'] += np.random.rand(len(pred_df)) * 10
+        pred_df['h'] += np.random.rand(len(pred_df)) * 10
+
+        # Drop 1% of the rows of pred_df
+        pred_df = pred_df.sample(frac=0.99, random_state=42).reset_index(drop=True)
+
+        ref_dfs[fn.replace('.parquet', '')] = gt_df
+        comp_dfs[fn.replace('.parquet', '')] = pred_df
+
+
+
+
+
+    config = HOTAConfig(id_alignment_method='global', similarity_metric='iou', reference_contains_dense_annotations=True)
+    # config = HOTAConfig(id_alignment_method='global', similarity_metric='latlon', reference_contains_dense_annotations=False)
+    evaluator = HOTAReIDEvaluator(n_workers=20, config=config)
+    evaluator.evaluate(ref_dfs, comp_dfs)
+    global_hota_data = evaluator.get_global_hota_data()
+    per_video_hota_data = evaluator.get_per_video_hota_data()
+    per_frame_hota_data = evaluator.get_per_frame_hota_data()
+
+    
+
+    print("combined HOTA data keys (at 0.5):")
+    idx = np.where(global_hota_data['IOU Thresholds'] == 0.5)[0][0]
+    hota_value = global_hota_data['HOTA'][global_hota_data['IOU Thresholds'] == 0.5]
+    for key in global_hota_data.keys():
+        val = global_hota_data[key]
+        if val is not None:
+            if isinstance(val, np.ndarray):
+                print(f"{key}: {global_hota_data[key][idx]}")
+            else:
+                print(f"{key}: {global_hota_data[key]}")
+
         
         
 
 if __name__ == "__main__":
 
-    hota_meva_subset()
+    # hota_meva_subset()
+    hota_meva_nano()
