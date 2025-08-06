@@ -111,7 +111,7 @@ def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str 
     unique_ref_ids, ref_counts = np.unique(ref_ids_t, return_counts=True)
     if np.max(ref_counts) > 1:
         duplicate_ids = unique_ref_ids[ref_counts > 1]
-        raise ValueError(f'Ground-truth has duplicate IDs in frame {dat.frame}: {duplicate_ids}')
+        raise ValueError(f'Ground-truth has duplicate IDs in video {dat.video_id} at frame {dat.frame}: {duplicate_ids}')
 
     # TODO how do we want to handle duplicate IDs? and reporting back to performers
     # Check for duplicate IDs in comparison data
@@ -119,7 +119,7 @@ def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str 
     unique_comp_ids, comp_counts = np.unique(comp_ids_t, return_counts=True)
     if np.max(comp_counts) > 1:
         duplicate_ids = unique_comp_ids[comp_counts > 1]
-        raise ValueError(f'Tracker predictions have duplicate IDs in frame {dat.frame}: {duplicate_ids}')
+        raise ValueError(f'Tracker predictions have duplicate IDs in video {dat.video_id} at frame {dat.frame}: {duplicate_ids}')
 
     # Get unique IDs once
     ref_ids = dat.ref_np[:, id_idx]
