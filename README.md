@@ -1,5 +1,8 @@
 # ReID-HOTA: Accelerated Higher Order Tracking Accuracy for Re-Identification
 
+[![PyPI version](https://badge.fury.io/py/reid_hota.svg)](https://badge.fury.io/py/reid_hota)
+[![License](https://img.shields.io/badge/License-Public%20Domain-blue.svg)](./LICENSE)
+
 
 **HOTA-ReID** is a modified version of the Higher Order Tracking Accuracy (HOTA) metric specifically designed to support Re-Identification (ReID) problems while providing significant performance improvements through parallel processing acceleration.
 
