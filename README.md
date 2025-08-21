@@ -36,6 +36,14 @@ uv sync
 
 ## Quick Start
 
+### Assumptions
+
+⚠️ For any given video frame, the set of global ids present must not contain duplicate ids. ⚠️
+
+The `reid_hota` package has no ability to disambiguate or determine which global id is "correct". Therefore `reid_hota` so will throw an error upon encountering duplicate ids in a single frame. 
+
+
+
 ### Basic Usage
 
 ```python
