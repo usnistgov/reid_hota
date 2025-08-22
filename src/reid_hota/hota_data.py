@@ -6,6 +6,7 @@ from typing import Optional
 from .cost_matrix import CostMatrixData, CostMatrixDataFrame
 from .sparse_matrix import Sparse2DMatrix, Sparse1DMatrix
 from .config import HOTAConfig
+from .hota_errors import NonFiniteSimilarityValueError
 
 
 @dataclass
@@ -63,7 +64,7 @@ class HOTAData:
     """
 
     def __init__(self, 
-                 sim_cost_matrix: Optional[CostMatrixData] = None, 
+                 sim_cost_matrix: Optional[CostMatrixData],
                  gt_to_tracker_id_map: Optional[dict[np.dtype[np.object_], np.dtype[np.object_]]] = None, 
                  config: HOTAConfig = HOTAConfig()):
         """
@@ -113,12 +114,9 @@ class HOTAData:
         # Frame metadata
         self.video_id: Optional[str] = None
         self.frame: Optional[int] = None
-        if sim_cost_matrix is not None:
-            self.video_id = sim_cost_matrix.video_id
-            self.frame = sim_cost_matrix.frame
-            self._populate(sim_cost_matrix, gt_to_tracker_id_map)
-        else:
-            raise ValueError("sim_cost_matrix is required")
+        self.video_id = sim_cost_matrix.video_id
+        self.frame = sim_cost_matrix.frame
+        self._populate(sim_cost_matrix, gt_to_tracker_id_map)
 
     def get_dict(self) -> dict:
         """Get dictionary representation of HOTA data."""
@@ -297,11 +295,12 @@ class HOTAData:
         
         # Validate similarity values are finite
         if np.any(~np.isfinite(matched_similarity_vals)):
-            raise ValueError(
-                f"Non-finite value in matched_similarity_vals for video {sim_cost_matrix.video_id} frame {sim_cost_matrix.frame}\n"
-                f"  sim_cost_matrix.i_ids: {sim_cost_matrix.i_ids}\n"
-                f"  sim_cost_matrix.j_ids: {sim_cost_matrix.j_ids}\n"
-                f"  sim_cost_matrix.cost_matrix: {sim_cost_matrix.cost_matrix}"
+            raise NonFiniteSimilarityValueError(
+                sim_cost_matrix.video_id,
+                sim_cost_matrix.frame,
+                sim_cost_matrix.i_ids,
+                sim_cost_matrix.j_ids,
+                sim_cost_matrix.cost_matrix
             )
         
         return matched_similarity_vals
@@ -425,6 +424,10 @@ class HOTAData:
         self._finalize()
         
     def _finalize(self):
+        self.metrics.ass_a.fill(0)  # reset to zero to make _finalize idempotent
+        self.metrics.ass_re.fill(0)  # reset to zero to make _finalize idempotent
+        self.metrics.ass_pr.fill(0)  # reset to zero to make _finalize idempotent
+
         for a, _ in enumerate(self.iou_thresholds):
             for k, v in self.sparse_data['matches_counts'][a].data_store.items():
                 rid_count = self.sparse_data['ref_id_counts'].get(k[0])

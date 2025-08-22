@@ -44,10 +44,9 @@ class CostMatrixData:
         i_idx = np.where(self.i_ids == i)[0]
         j_idx = np.where(self.j_ids == j)[0]
 
-        # If either ID not found, return 0
+        # If either ID not found, return nan
         if len(i_idx) == 0 or len(j_idx) == 0:
-            return np.nan
-            # raise ValueError(f'ID not found in cost matrix: {i}, {j}')
+            return np.nan # 'ID not found in cost matrix: {i}, {j}'
 
         return float(self.cost_matrix[i_idx[0], j_idx[0]])
     

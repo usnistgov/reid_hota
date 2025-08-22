@@ -2,6 +2,12 @@ import numpy as np
 from typing import Optional, List, Literal
 from numpy.typing import NDArray
 from dataclasses import dataclass, field
+from .hota_errors import (
+    InvalidIDAlignmentMethodError,
+    InvalidSimilarityMetricError,
+    EmptyIOUThresholdsError,
+    InvalidIOUThresholdsRangeError
+)
 
 
 @dataclass
@@ -53,10 +59,10 @@ class HOTAConfig:
         SIMILARITY_METRICS = ['iou', 'latlon', 'latlonalt']
 
         if self.id_alignment_method not in ID_ALIGNMENT_METHODS:
-            raise ValueError(f"id_alignment_method must be one of: {ID_ALIGNMENT_METHODS}")
+            raise InvalidIDAlignmentMethodError(self.id_alignment_method, ID_ALIGNMENT_METHODS)
         if self.similarity_metric not in SIMILARITY_METRICS:
-            raise ValueError(f"similarity_metric must be one of: {SIMILARITY_METRICS}")
+            raise InvalidSimilarityMetricError(self.similarity_metric, SIMILARITY_METRICS)
         if len(self.iou_thresholds) == 0:
-            raise ValueError("iou_thresholds cannot be empty")
+            raise EmptyIOUThresholdsError()
         if not np.all((self.iou_thresholds >= 0) & (self.iou_thresholds <= 1)):
-            raise ValueError("iou_thresholds must be in range [0, 1]")
+            raise InvalidIOUThresholdsRangeError(self.iou_thresholds)
