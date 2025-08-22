@@ -11,6 +11,7 @@ pd.options.mode.chained_assignment = None
 from .cost_matrix import CostMatrixData, CostMatrixDataFrame
 from .hota_data import VideoFrameData, FrameExtractionInputData, HOTAData
 from .config import HOTAConfig
+from .hota_errors import MissingVideoIDError, DuplicateIDError, InvalidSimilarityMetricError, UnsupportedBoxFormatError
 
 
 def merge_hota_data(hota_data_list: List[HOTAData]) -> HOTAData:
@@ -36,7 +37,7 @@ def merge_hota_data(hota_data_list: List[HOTAData]) -> HOTAData:
     # we already have the first HOTA_DATA in global_hota_data
     for dat in hota_data_list[1:]:
         if dat.video_id is None:
-            raise ValueError("video_id is None")
+            raise MissingVideoIDError()
         global_hota_data += dat
         
     global_hota_data._finalize()
@@ -111,7 +112,7 @@ def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str 
     unique_ref_ids, ref_counts = np.unique(ref_ids_t, return_counts=True)
     if np.max(ref_counts) > 1:
         duplicate_ids = unique_ref_ids[ref_counts > 1]
-        raise ValueError(f'Ground-truth has duplicate IDs in video {dat.video_id} at frame {dat.frame}: {duplicate_ids}')
+        raise DuplicateIDError(True, dat.video_id, dat.frame, duplicate_ids)
 
     # TODO how do we want to handle duplicate IDs? and reporting back to performers
     # Check for duplicate IDs in comparison data
@@ -119,7 +120,7 @@ def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str 
     unique_comp_ids, comp_counts = np.unique(comp_ids_t, return_counts=True)
     if np.max(comp_counts) > 1:
         duplicate_ids = unique_comp_ids[comp_counts > 1]
-        raise ValueError(f'Tracker predictions have duplicate IDs in video {dat.video_id} at frame {dat.frame}: {duplicate_ids}')
+        raise DuplicateIDError(False, dat.video_id, dat.frame, duplicate_ids)
 
     # Get unique IDs once
     ref_ids = dat.ref_np[:, id_idx]
@@ -152,7 +153,7 @@ def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str 
         bb2 = dat.comp_np[:, box_idx].astype(float)
         cost_matrix = calculate_latlon_l2(bb1, bb2)
     else:
-        raise ValueError(f'Unsupported similarity metric: {similarity_metric}')
+        raise InvalidSimilarityMetricError(similarity_metric)
 
     return CostMatrixDataFrame(i_ids=ref_ids, j_ids=comp_ids, i_hashes=ref_hashes, j_hashes=comp_hashes, cost_matrix=cost_matrix, video_id=dat.video_id, frame=dat.frame)
 
@@ -267,7 +268,6 @@ def jaccard_cost_matrices(matrices_dict: dict[str, list[CostMatrixData]], return
     
     # Single chunk case - use original implementation
     if n_workers <= 1:
-        # raise ValueError("n_workers must be greater than 1")
         results = [process_jaccard_cost_matrix_chunk(video_id, chunk) for video_id, chunk in matrices_dict.items()]
     else:
         # Process chunks in parallel
@@ -393,7 +393,7 @@ def calculate_box_ious(bboxes1: np.ndarray, bboxes2: np.ndarray, box_format='xyw
         # Use direct references instead of copying
         boxes1, boxes2 = bboxes1, bboxes2
     else:
-        raise ValueError(f'Unsupported box format: {box_format}')
+        raise UnsupportedBoxFormatError(box_format)
 
     # Pre-compute box areas once
     boxes1_area = (boxes1[:, 2] - boxes1[:, 0]) * (boxes1[:, 3] - boxes1[:, 1])
