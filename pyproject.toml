@@ -24,6 +24,38 @@ path = "src/reid_hota/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/reid_hota"]
+exclude = [
+    "tests/",
+    "examples/",
+    "*.pyc",
+    "__pycache__/",
+    "*.egg-info/",
+    ".git/",
+    ".gitignore",
+    "*.md",
+    "*.txt",
+    "*.json",
+    "*.csv",
+    "*.mp4",
+    "*.parquet",
+    "*.krtd"
+]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "tests/",
+    "examples/",
+    "*.pyc",
+    "__pycache__/",
+    "*.egg-info/",
+    ".git/",
+    ".gitignore",
+    "*.json",
+    "*.csv",
+    "*.mp4",
+    "*.parquet",
+    "*.krtd"
+]
 
 [tool.pytest.ini_options]
 addopts = ["-s"]

@@ -38,7 +38,8 @@ uv sync
 
 ### Assumptions
 
-⚠️ For any given video frame, the set of global ids present must not contain duplicate ids. ⚠️
+⚠️ For any given video frame, the set of reference global ids present must not contain duplicate ids. ⚠️
+Any duplicate comparions ids within a single frame will have their costs combined using Jaccard.
 
 The `reid_hota` package has no ability to disambiguate or determine which global id is "correct". Therefore `reid_hota` so will throw an error upon encountering duplicate ids in a single frame. 
 
