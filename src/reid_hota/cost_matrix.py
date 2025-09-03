@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.optimize import linear_sum_assignment
+from .hota_errors import DuplicateIDError
 
 
 class CostMatrixData:
@@ -47,6 +48,11 @@ class CostMatrixData:
         # If either ID not found, return nan
         if len(i_idx) == 0 or len(j_idx) == 0:
             return np.nan # 'ID not found in cost matrix: {i}, {j}'
+        
+        if len(i_idx) > 1:
+            raise DuplicateIDError(True, self.video_id, self.frame, self.i_ids[i_idx])
+        if len(j_idx) > 1:
+            raise DuplicateIDError(True, self.video_id, self.frame, self.j_ids[j_idx])
 
         return float(self.cost_matrix[i_idx[0], j_idx[0]])
     

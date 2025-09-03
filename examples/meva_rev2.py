@@ -111,12 +111,21 @@ def hota_meva_nano():
         comp_dfs[fn.replace('.parquet', '')] = pred_df
 
 
+    # # TO test duplicate ID handling
+    # df = comp_dfs[list(comp_dfs.keys())[0]]
+    # sub_df = df[df['frame'] == 3545]
+    # df.loc[(df['frame'] == 3545) & (df['object_id'] == 2), 'object_id'] = 1
+    # comp_dfs[list(comp_dfs.keys())[0]] = df
 
+    # df = comp_dfs[list(comp_dfs.keys())[0]]
+    # sub_df2 = df[df['frame'] == 3545]
+
+    # print(sub_df2)
 
 
     config = HOTAConfig(id_alignment_method='global', similarity_metric='iou', reference_contains_dense_annotations=True)
     # config = HOTAConfig(id_alignment_method='global', similarity_metric='latlon', reference_contains_dense_annotations=False)
-    evaluator = HOTAReIDEvaluator(n_workers=20, config=config)
+    evaluator = HOTAReIDEvaluator(n_workers=1, config=config)
     evaluator.evaluate(ref_dfs, comp_dfs)
     global_hota_data = evaluator.get_global_hota_data()
     per_video_hota_data = evaluator.get_per_video_hota_data()

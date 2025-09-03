@@ -114,13 +114,9 @@ def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str 
         duplicate_ids = unique_ref_ids[ref_counts > 1]
         raise DuplicateIDError(True, dat.video_id, dat.frame, duplicate_ids)
 
-    # TODO how do we want to handle duplicate IDs? and reporting back to performers
-    # Check for duplicate IDs in comparison data
+    # Discover any duplicate IDs in comparison data
     comp_ids_t = dat.comp_np[:, id_idx]
     unique_comp_ids, comp_counts = np.unique(comp_ids_t, return_counts=True)
-    if np.max(comp_counts) > 1:
-        duplicate_ids = unique_comp_ids[comp_counts > 1]
-        raise DuplicateIDError(False, dat.video_id, dat.frame, duplicate_ids)
 
     # Get unique IDs once
     ref_ids = dat.ref_np[:, id_idx]
@@ -154,6 +150,40 @@ def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str 
         cost_matrix = calculate_latlon_l2(bb1, bb2)
     else:
         raise InvalidSimilarityMetricError(similarity_metric)
+    
+
+    duplicate_comp_ids = unique_comp_ids[comp_counts > 1]
+    cols_to_delete = []
+    for c_id in duplicate_comp_ids:
+        mask = np.where(comp_ids_t == c_id)[0]
+        sub_cost_matrix = cost_matrix[:, mask]
+        
+        # Use Jaccard similarity instead of averaging
+        # Apply the same Jaccard formula as in jaccard_cost_matrices function
+        # but for merging duplicate columns within a single matrix
+        
+        # Sum the cost values (intersection)
+        cost_sum = np.sum(sub_cost_matrix, axis=1)
+        
+        # For Jaccard: each reference ID appears once, each duplicate comp ID appears once
+        # So the counts are: ref_count = 1, comp_count = len(mask)
+        ref_count = 1
+        comp_count = len(mask)
+        
+        # Apply Jaccard formula: sum / (ref_count + comp_count - sum)
+        # This is the same formula used in jaccard_cost_matrices
+        jaccard_values = cost_sum / (ref_count + comp_count - cost_sum)
+        
+        # Handle potential division by zero (though unlikely in practice)
+        jaccard_values = np.where(np.isfinite(jaccard_values), jaccard_values, 0.0)
+        # avg_values = np.mean(cost_matrix[:, mask], axis=1)
+        
+        cost_matrix[:, mask[0]] = jaccard_values
+        cols_to_delete.extend(mask[1:])
+
+    if cols_to_delete:
+        cost_matrix = np.delete(cost_matrix, cols_to_delete, axis=1)
+        comp_ids = np.delete(comp_ids, cols_to_delete)
 
     return CostMatrixDataFrame(i_ids=ref_ids, j_ids=comp_ids, i_hashes=ref_hashes, j_hashes=comp_hashes, cost_matrix=cost_matrix, video_id=dat.video_id, frame=dat.frame)
 
