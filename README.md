@@ -9,6 +9,7 @@
 ### Key Features
 
 - **ReID-Aware Evaluation**: Handles identity switches and re-appearances common in ReID scenarios
+- **Multiple Metrics**: Computes both IDF1 and HOTA concurrently
 - **Parallel Processing**: Multi-threaded computation for faster evaluation
 - **Flexible ID Assignment**: Flexible ID assignment per frame, video, and global
 - **Extraneous Box Handling**: Optional removal of comparison ids which don't have an assignment to a ground truth id, with those FP tracked separately. 
@@ -39,10 +40,14 @@ uv sync
 ### Assumptions
 
 ⚠️ For any given video frame, the set of reference global ids present must not contain duplicate ids. ⚠️
+
 Any duplicate comparison ids within a single frame will have their costs combined using Jaccard.
 
 The `reid_hota` package has no ability to disambiguate or determine which global id is "correct". Therefore `reid_hota` so will throw an error upon encountering duplicate ids in a single frame. 
 
+### IDF1
+
+This software computes both IDF1 (Identity F1) and HOTA (higher order tracking accuracy) metrics. The same intermediate results are required to compute [IDF1](https://arxiv.org/abs/1609.01775) and [HOTA](https://arxiv.org/abs/2009.07736), so the software always computes both metric results. There is no support for disabling one or the other, you always get both IDF1 and HOTA scores in the output dictionary. 
 
 
 ### Basic Usage
