@@ -3,8 +3,6 @@ import os
 import sys
 import numpy as np
 import pandas as pd
-import json
-# from pathlib import Path
 import multiprocessing as mp
 
 @pytest.fixture(scope="session", autouse=True)
@@ -16,6 +14,7 @@ def setup_multiprocessing():
 # Add the src directory to Python path to import local reid_hota
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
+from reid_hota.constants import AnnotationColumn
 from reid_hota import HOTAReIDEvaluator, HOTAConfig
 from test_utils import validate_results
 
@@ -35,30 +34,30 @@ def tracking_data() -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
         pred_df = pd.read_csv(os.path.join(pred_fp, fn))
 
         
-        if 'frame' in gt_df.columns:
-            gt_df['frame'] = gt_df['frame']
-        if 'frame' in pred_df.columns:
-            pred_df['frame'] = pred_df['frame']
-        # Rename width column to w if it exists
-        if 'width' in gt_df.columns:
-            gt_df['w'] = gt_df['width']
-        if 'width' in pred_df.columns:
-            pred_df['w'] = pred_df['width']
-        
-        # Rename height column to h if it exists
-        if 'height' in gt_df.columns:
-            gt_df['h'] = gt_df['height']
-        if 'height' in pred_df.columns:
-            pred_df['h'] = pred_df['height']
+        if AnnotationColumn.FRAME in gt_df.columns:
+            gt_df[AnnotationColumn.FRAME] = gt_df[AnnotationColumn.FRAME]
+        if AnnotationColumn.FRAME in pred_df.columns:
+            pred_df[AnnotationColumn.FRAME] = pred_df[AnnotationColumn.FRAME]
+        # # Rename width column to w if it exists
+        # if 'width' in gt_df.columns:
+        #     gt_df['w'] = gt_df['width']
+        # if 'width' in pred_df.columns:
+        #     pred_df['w'] = pred_df['width']
+        #
+        # # Rename height column to h if it exists
+        # if 'height' in gt_df.columns:
+        #     gt_df['h'] = gt_df['height']
+        # if 'height' in pred_df.columns:
+        #     pred_df['h'] = pred_df['height']
 
-        gt_df['lat'] = np.random.rand(len(gt_df)) * 10
-        pred_df['lat'] = np.random.rand(len(pred_df)) * 10
+        gt_df[AnnotationColumn.LAT] = np.random.rand(len(gt_df)) * 10
+        pred_df[AnnotationColumn.LAT] = np.random.rand(len(pred_df)) * 10
 
-        gt_df['lon'] = np.random.rand(len(gt_df)) * 10
-        pred_df['lon'] = np.random.rand(len(pred_df)) * 10
+        gt_df[AnnotationColumn.LON] = np.random.rand(len(gt_df)) * 10
+        pred_df[AnnotationColumn.LON] = np.random.rand(len(pred_df)) * 10
 
-        gt_df['alt'] = np.random.rand(len(gt_df)) * 10
-        pred_df['alt'] = np.random.rand(len(pred_df)) * 10
+        gt_df[AnnotationColumn.ALT] = np.random.rand(len(gt_df)) * 10
+        pred_df[AnnotationColumn.ALT] = np.random.rand(len(pred_df)) * 10
 
         # Create a new random box for each frame
         # Create new rows for each frame this tests the FP purge
@@ -83,11 +82,36 @@ def tracking_data() -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
         # pred_df = pd.concat([pred_df, new_df], ignore_index=True)
 
         # hash(f"frame:{frame} object_id:{object_id} x:{x} y:{y} w:{w} h:{h} class_id:{class_id} lat:{lat} lon:{lon} alt:{alt}")
-        pred_df['box_hash'] = pred_df.apply(lambda row: str(hash(f"frame:{row['frame']} object_id:{row['object_id']} x:{row['x']} y:{row['y']} w:{row['w']} h:{row['h']} class_id:{row['class_id']} lat:{row['lat']} lon:{row['lon']} alt:{row['alt']}")), axis=1)
-        gt_df['box_hash'] = gt_df.apply(lambda row: str(hash(f"frame:{row['frame']} object_id:{row['object_id']} x:{row['x']} y:{row['y']} w:{row['w']} h:{row['h']} class_id:{row['class_id']} lat:{row['lat']} lon:{row['lon']} alt:{row['alt']}")), axis=1)
-
-        
-
+        pred_df['box_hash'] = pred_df.apply(
+            lambda row: str(hash(
+                f"{AnnotationColumn.FRAME}:{row[AnnotationColumn.FRAME]} "
+                f"{AnnotationColumn.OBJECT_ID}:{row[AnnotationColumn.OBJECT_ID]} "
+                f"{AnnotationColumn.X1}:{row[AnnotationColumn.X1]} "
+                f"{AnnotationColumn.Y1}:{row[AnnotationColumn.Y1]} "
+                f"{AnnotationColumn.X2}:{row[AnnotationColumn.X2]} "
+                f"{AnnotationColumn.Y2}:{row[AnnotationColumn.Y2]} "
+                f"{AnnotationColumn.CLASS_ID}:{row[AnnotationColumn.CLASS_ID]} "
+                f"{AnnotationColumn.LAT}:{row[AnnotationColumn.LAT]} "
+                f"{AnnotationColumn.LON}:{row[AnnotationColumn.LON]} "
+                f"{AnnotationColumn.ALT}:{row[AnnotationColumn.ALT]}"
+            )),
+            axis=1
+        )
+        gt_df['box_hash'] = gt_df.apply(
+            lambda row: str(hash(
+                f"{AnnotationColumn.FRAME}:{row[AnnotationColumn.FRAME]} "
+                f"{AnnotationColumn.OBJECT_ID}:{row[AnnotationColumn.OBJECT_ID]} "
+                f"{AnnotationColumn.X1}:{row[AnnotationColumn.X1]} "
+                f"{AnnotationColumn.Y1}:{row[AnnotationColumn.Y1]} "
+                f"{AnnotationColumn.X2}:{row[AnnotationColumn.X2]} "
+                f"{AnnotationColumn.Y2}:{row[AnnotationColumn.Y2]} "
+                f"{AnnotationColumn.CLASS_ID}:{row[AnnotationColumn.CLASS_ID]} "
+                f"{AnnotationColumn.LAT}:{row[AnnotationColumn.LAT]} "
+                f"{AnnotationColumn.LON}:{row[AnnotationColumn.LON]} "
+                f"{AnnotationColumn.ALT}:{row[AnnotationColumn.ALT]}"
+            )),
+            axis=1
+        )
 
         ref_dfs[fn.replace('.csv', '')] = gt_df
         comp_dfs[fn.replace('.csv', '')] = pred_df
@@ -95,7 +119,7 @@ def tracking_data() -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
     # Print statistics about the number of frames in each video
     frame_counts = []
     for video_id in ref_dfs:
-        unique_frames = ref_dfs[video_id]['frame'].nunique()
+        unique_frames = ref_dfs[video_id][AnnotationColumn.FRAME].nunique()
         frame_counts.append(unique_frames)
 
     # Print class IDs present in both ref_dfs and comp_dfs
@@ -103,9 +127,9 @@ def tracking_data() -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
     comp_class_ids = set()
     
     for video_id in ref_dfs:
-        ref_class_ids.update(ref_dfs[video_id]['class_id'].unique())
+        ref_class_ids.update(ref_dfs[video_id][AnnotationColumn.CLASS_ID].unique())
     for video_id in comp_dfs:
-        comp_class_ids.update(comp_dfs[video_id]['class_id'].unique())
+        comp_class_ids.update(comp_dfs[video_id][AnnotationColumn.CLASS_ID].unique())
         
     print("Class IDs in reference data:", sorted(list(ref_class_ids)))
     print("Class IDs in comparison data:", sorted(list(comp_class_ids)))
