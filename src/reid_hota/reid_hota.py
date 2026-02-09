@@ -5,7 +5,7 @@ import warnings
 
 from .hota_utils import compute_cost_per_video_per_frame, jaccard_cost_matrices, build_HOTA_objects, merge_hota_data
 from .config import HOTAConfig
-
+from .constants import AnnotationColumn
 
 
 class HOTAReIDEvaluator:
@@ -16,8 +16,19 @@ class HOTAReIDEvaluator:
     and re-identification evaluation, supporting various similarity metrics and 
     ID alignment strategies.
     """
-    
-    REQUIRED_COLUMNS = ['frame', 'object_id', 'x', 'y', 'w', 'h', 'class_id', 'lat', 'lon', 'alt', 'box_hash']
+    REQUIRED_COLUMNS = [
+        AnnotationColumn.FRAME,
+        AnnotationColumn.OBJECT_ID,
+        AnnotationColumn.X1,
+        AnnotationColumn.Y1,
+        AnnotationColumn.X2,
+        AnnotationColumn.Y2,
+        AnnotationColumn.CLASS_ID,
+        AnnotationColumn.LAT,
+        AnnotationColumn.LON,
+        AnnotationColumn.ALT,
+        AnnotationColumn.BOX_HASH,
+    ]
 
     def __init__(self, n_workers: int = 0, config: HOTAConfig = HOTAConfig()):
         """
@@ -42,17 +53,17 @@ class HOTAReIDEvaluator:
         required_cols = self.REQUIRED_COLUMNS.copy()
         
         if self.config.class_ids is None:
-            required_cols.remove('class_id')
+            required_cols.remove(AnnotationColumn.CLASS_ID)
         if not self.config.track_fp_fn_tp_box_hashes:
-            required_cols.remove('box_hash')
+            required_cols.remove(AnnotationColumn.BOX_HASH)
         if self.config.similarity_metric == 'latlonalt' or self.config.similarity_metric == 'latlon':
-            for col in ['x', 'y', 'w', 'h']:
+            for col in [AnnotationColumn.X1, AnnotationColumn.Y1, AnnotationColumn.X2, AnnotationColumn.Y2]:
                 required_cols.remove(col)
         if self.config.similarity_metric == 'iou':
-            for col in ['lat', 'lon', 'alt']:
+            for col in [AnnotationColumn.LAT, AnnotationColumn.LON, AnnotationColumn.ALT]:
                 required_cols.remove(col)
         if self.config.similarity_metric == 'latlon':
-            required_cols.remove('alt')
+            required_cols.remove(AnnotationColumn.ALT)
         
         return required_cols
 
@@ -107,9 +118,9 @@ class HOTAReIDEvaluator:
             if not self.config.suppress_print_statements:
                 print(f"Keeping only the relevant class_ids: {self.class_ids}")
             for key in ref_dfs.keys():
-                ref_dfs[key] = ref_dfs[key][ref_dfs[key]['class_id'].isin(self.class_ids)]
+                ref_dfs[key] = ref_dfs[key][ref_dfs[key][AnnotationColumn.CLASS_ID].isin(self.class_ids)]
             for key in comp_dfs.keys():
-                comp_dfs[key] = comp_dfs[key][comp_dfs[key]['class_id'].isin(self.class_ids)]
+                comp_dfs[key] = comp_dfs[key][comp_dfs[key][AnnotationColumn.CLASS_ID].isin(self.class_ids)]
 
             
 

@@ -97,14 +97,14 @@ Traditionally, the set of video keys in the ref_dfs, and comp_dfs dictionaries w
 
 Each dataframe has the following minimum required columns:
 ```python
-['frame', 'object_id', 'x', 'y', 'w', 'h', 'class_id']
+['frame', 'id', 'x1', 'y1', 'x2', 'y2', 'object_type']
 ```
 
 ```csv
-frame,object_id,x,y,w,h,class_id
-0,3,1596,906,123,163,1
-1,3,1598,914,135,156,1
-2,3,1602,926,144,144,1
+frame,id,x1,y1,x2,y2,object_type
+0,3,1596,906,1719,1069,1
+1,3,1598,914,1733,1070,1
+2,3,1602,926,1746,1070,1
 ```
 
 
@@ -120,7 +120,7 @@ If  `HOTAConfig(similarity_metric='latlonalt')` then the required columns includ
 If `HOTAConfig(track_fp_fn_tp_box_hashes=True)` then the column `['box_hash']` is also required, so reid_hota has a per-box hash to keep track of for later grouping into TP, FP, FN.
 
 The full set of allowable input dataframe columns is:
-`['frame', 'object_id', 'x', 'y', 'w', 'h', 'class_id', 'lat', 'lon', 'alt', 'box_hash']`
+`['frame', 'id', 'x1', 'y1', 'x2', 'y2', 'object_type', 'lat', 'lon', 'alt', 'box_hash']`
 
 ### HOTAConfig Options
 
@@ -201,23 +201,26 @@ def get_dict(self) -> dict:
         'video_id': Optional[str],
         'frame': Optional[str],
         'TP': np.array(len(self.iou_thresholds)),
-        'FN': np.array(len(self.iou_thresholds))
-        'FP': np.array(len(self.iou_thresholds))
-        'UnmatchedFP': int
-        'LocA': np.array(len(self.iou_thresholds))
-        'HOTA': np.array(len(self.iou_thresholds))
-        'AssA': np.array(len(self.iou_thresholds))
-        'AssRe': np.array(len(self.iou_thresholds))
-        'AssPr': np.array(len(self.iou_thresholds))
-        'DetA': np.array(len(self.iou_thresholds))
-        'DetRe': np.array(len(self.iou_thresholds))
-        'DetPr': np.array(len(self.iou_thresholds))
-        'OWTA': np.array(len(self.iou_thresholds))
-        'IDF1': np.array(len(self.iou_thresholds))}
+        'FN': np.array(len(self.iou_thresholds)),
+        'FP': np.array(len(self.iou_thresholds)),
+        'UnmatchedFP': int,
+        'LocA': np.array(len(self.iou_thresholds)),
+        'HOTA': np.array(len(self.iou_thresholds)),
+        'AssA': np.array(len(self.iou_thresholds)),
+        'AssRe': np.array(len(self.iou_thresholds)),
+        'AssPr': np.array(len(self.iou_thresholds)),
+        'DetA': np.array(len(self.iou_thresholds)),
+        'DetRe': np.array(len(self.iou_thresholds)),
+        'DetPr': np.array(len(self.iou_thresholds)),
+        'OWTA': np.array(len(self.iou_thresholds)),
+        'IDF1': np.array(len(self.iou_thresholds))
+    }
+    
     if track_hashes:
         global_hota_data['FP_hashes'] = list(hashable)
         global_hota_data['FN_hashes'] = list(hashable)
         global_hota_data['TP_hashes'] = list(hashable)
+        
     return global_hota_data
 ```
 
@@ -265,9 +268,6 @@ The `HOTA` metric results in a vector of numbers of length IOU_Thresholds. Each 
 idx = global_hota_data['IOU Thresholds'] == 0.5
 hota_value = global_hota_data['HOTA'][idx]
 ```
-
-
-
 
 
 ## License

@@ -12,7 +12,7 @@ from .cost_matrix import CostMatrixData, CostMatrixDataFrame
 from .hota_data import VideoFrameData, FrameExtractionInputData, HOTAData
 from .config import HOTAConfig
 from .hota_errors import MissingVideoIDError, DuplicateIDError, InvalidSimilarityMetricError, UnsupportedBoxFormatError
-
+from .constants import AnnotationColumn, BOX_FORMAT
 
 def merge_hota_data(hota_data_list: List[HOTAData]) -> HOTAData:
     """
@@ -55,8 +55,8 @@ def compute_id_alignment_similarity_from_df(input_dat: FrameExtractionInputData,
     
     # Group by frame
     # return pd.api.typing.DataFrameGroupBy
-    ref_frames_df = ref_df.groupby('frame')
-    comp_frames_df = comp_df.groupby('frame')
+    ref_frames_df = ref_df.groupby(AnnotationColumn.FRAME)
+    comp_frames_df = comp_df.groupby(AnnotationColumn.FRAME)
 
     k1 = set(ref_frames_df.groups.keys())
     k2 = set(comp_frames_df.groups.keys())
@@ -86,9 +86,9 @@ def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str 
     Compute alignment costs between reference and comparison frames.
     """
 
-    f_idx = dat.col_names.index('frame')
-    id_idx = dat.col_names.index('object_id')
-    hash_idx = dat.col_names.index('box_hash') if 'box_hash' in dat.col_names else None
+    f_idx = dat.col_names.index(AnnotationColumn.FRAME)
+    id_idx = dat.col_names.index(AnnotationColumn.OBJECT_ID)
+    hash_idx = dat.col_names.index(AnnotationColumn.BOX_HASH) if AnnotationColumn.BOX_HASH in dat.col_names else None
     # Quick validation using values access
     ref_frames = np.unique(dat.ref_np[:, f_idx])
     comp_frames = np.unique(dat.comp_np[:, f_idx])
@@ -130,21 +130,32 @@ def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str 
 
     if similarity_metric == 'iou':
         # Direct numpy array creation for bounding boxes
-        box_idx = [dat.col_names.index(col) for col in ['x', 'y', 'w', 'h']]
+        box_idx = [
+            dat.col_names.index(col)
+            for col in [
+                AnnotationColumn.X1,
+                AnnotationColumn.Y1,
+                AnnotationColumn.X2,
+                AnnotationColumn.Y2
+            ]
+        ]
         bb1 = dat.ref_np[:, box_idx].astype(float)
         bb2 = dat.comp_np[:, box_idx].astype(float)
 
         # Create cost matrix and compute IOUs
-        cost_matrix = calculate_box_ious(bb1, bb2, box_format='xywh')
+        cost_matrix = calculate_box_ious(bb1, bb2, box_format=BOX_FORMAT)
     elif similarity_metric == 'latlonalt':
         # Create cost matrix and compute lat/lon distance
-        box_idx = [dat.col_names.index(col) for col in ['lat', 'lon', 'alt']]
+        box_idx = [
+            dat.col_names.index(col)
+            for col in [AnnotationColumn.LAT, AnnotationColumn.LON, AnnotationColumn.ALT]
+        ]
         bb1 = dat.ref_np[:, box_idx].astype(float)
         bb2 = dat.comp_np[:, box_idx].astype(float)
         cost_matrix = calculate_latlonalt_l2(bb1, bb2)
     elif similarity_metric == 'latlon':
         # Create cost matrix and compute lat/lon distance
-        box_idx = [dat.col_names.index(col) for col in ['lat', 'lon']]
+        box_idx = [dat.col_names.index(col) for col in [AnnotationColumn.LAT, AnnotationColumn.LON]]
         bb1 = dat.ref_np[:, box_idx].astype(float)
         bb2 = dat.comp_np[:, box_idx].astype(float)
         cost_matrix = calculate_latlon_l2(bb1, bb2)
@@ -229,12 +240,6 @@ def build_HOTA_objects(id_similarity_per_video, config: HOTAConfig, per_video_co
     per_frame_hota_data = {res[0].video_id: res for res in video_results}
     per_video_hota_data = {res[0].video_id: merge_hota_data(res) for res in video_results}
     return per_video_hota_data, per_frame_hota_data
-
-
-
-
-
-
 
 
 def compute_cost_per_video_per_frame(ref_dfs: dict[str, pd.DataFrame], comp_dfs: dict[str, pd.DataFrame], n_workers:int=0, similarity_metric: str = 'iou') -> dict[str, list[CostMatrixDataFrame]]:
@@ -363,13 +368,13 @@ def extract_per_frame_data(input_dat: FrameExtractionInputData, class_id: np.dty
 
     if class_id is not None:
         # only keep the relevant class
-        ref_df = ref_df[ref_df['class_id'] == class_id]
-        comp_df = comp_df[comp_df['class_id'] == class_id]
+        ref_df = ref_df[ref_df[AnnotationColumn.CLASS_ID] == class_id]
+        comp_df = comp_df[comp_df[AnnotationColumn.CLASS_ID] == class_id]
     
     # Group by frame
     # return pd.api.typing.DataFrameGroupBy
-    ref_frames_df = ref_df.groupby('frame')
-    comp_frames_df = comp_df.groupby('frame')
+    ref_frames_df = ref_df.groupby(AnnotationColumn.FRAME)
+    comp_frames_df = comp_df.groupby(AnnotationColumn.FRAME)
 
     k1 = set(ref_frames_df.groups.keys())
     k2 = set(comp_frames_df.groups.keys())
