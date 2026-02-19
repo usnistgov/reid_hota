@@ -103,7 +103,7 @@ class HOTAReIDEvaluator:
                 ref_df = ref_dfs[key]
                 assert col in ref_df.columns, f"Column \"{col}\" not found in ref_df \"{key}\""
             for key in comp_dfs.keys():
-                comp_df = ref_dfs[key]
+                comp_df = comp_dfs[key]
                 assert col in comp_df.columns, f"Column \"{col}\" not found in comp_df \"{key}\""
 
         # remove all but the required columns
@@ -116,11 +116,11 @@ class HOTAReIDEvaluator:
         # Keep only the relevant classes
         if self.config.class_ids is not None:
             if not self.config.suppress_print_statements:
-                print(f"Keeping only the relevant class_ids: {self.class_ids}")
+                print(f"Keeping only the relevant class_ids: {self.config.class_ids}")
             for key in ref_dfs.keys():
-                ref_dfs[key] = ref_dfs[key][ref_dfs[key][AnnotationColumn.CLASS_ID].isin(self.class_ids)]
+                ref_dfs[key] = ref_dfs[key][ref_dfs[key][AnnotationColumn.CLASS_ID].isin(self.config.class_ids)]
             for key in comp_dfs.keys():
-                comp_dfs[key] = comp_dfs[key][comp_dfs[key][AnnotationColumn.CLASS_ID].isin(self.class_ids)]
+                comp_dfs[key] = comp_dfs[key][comp_dfs[key][AnnotationColumn.CLASS_ID].isin(self.config.class_ids)]
 
             
 
@@ -286,7 +286,3 @@ class HOTAReIDEvaluator:
         output_file = os.path.join(output_dir, f'hota.parquet')
         df.to_parquet(output_file, index=False)
         df.to_csv(output_file.replace('.parquet', '.csv'), index=False, float_format='%.4f')
-
-
-            
-
