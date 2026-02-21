@@ -32,24 +32,7 @@ def tracking_data() -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
     for fn in fns:
         gt_df = pd.read_csv(os.path.join(gt_fp, fn))
         pred_df = pd.read_csv(os.path.join(pred_fp, fn))
-
         
-        if AnnotationColumn.FRAME in gt_df.columns:
-            gt_df[AnnotationColumn.FRAME] = gt_df[AnnotationColumn.FRAME]
-        if AnnotationColumn.FRAME in pred_df.columns:
-            pred_df[AnnotationColumn.FRAME] = pred_df[AnnotationColumn.FRAME]
-        # # Rename width column to w if it exists
-        # if 'width' in gt_df.columns:
-        #     gt_df['w'] = gt_df['width']
-        # if 'width' in pred_df.columns:
-        #     pred_df['w'] = pred_df['width']
-        #
-        # # Rename height column to h if it exists
-        # if 'height' in gt_df.columns:
-        #     gt_df['h'] = gt_df['height']
-        # if 'height' in pred_df.columns:
-        #     pred_df['h'] = pred_df['height']
-
         gt_df[AnnotationColumn.LAT] = np.random.rand(len(gt_df)) * 10
         pred_df[AnnotationColumn.LAT] = np.random.rand(len(pred_df)) * 10
 
@@ -144,14 +127,6 @@ def tracking_data() -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
     return ref_dfs, comp_dfs
 
 
-
-
-       
-
-
-        
-
-
 class TestHOTA_meva_reid_short_global_id_alignment:
     """Test class for HOTA metric functionality."""
     
@@ -169,8 +144,6 @@ class TestHOTA_meva_reid_short_global_id_alignment:
         gt_fp = os.path.join(os.path.dirname(__file__), 'data', 'meva_rid_short', 'results_global_id_alignment.json')
         validate_results(global_hota_data, gt_fp)  # raises AssertionError if any keys fail
 
-        
-
 
 class TestHOTA_meva_reid_short_video_id_alignment:
     """Test class for HOTA metric functionality."""
@@ -179,7 +152,7 @@ class TestHOTA_meva_reid_short_video_id_alignment:
         """Test the HOTA metric computation."""
         ref_dfs, comp_dfs = tracking_data
 
-        config = HOTAConfig(id_alignment_method='per_video', similarity_metric='iou', reference_contains_dense_annotations=True)
+        config = HOTAConfig(id_alignment_method='per_video', similarity_metric='iou', suppress_print_statements=True, reference_contains_dense_annotations=True)
         evaluator = HOTAReIDEvaluator(n_workers=20, config=config)
         evaluator.evaluate(ref_dfs, comp_dfs)
         global_hota_data = evaluator.get_global_hota_data()
@@ -197,8 +170,7 @@ class TestHOTA_meva_reid_short_frame_id_alignment:
         """Test the HOTA metric computation."""
         ref_dfs, comp_dfs = tracking_data
 
-
-        config = HOTAConfig(id_alignment_method='per_frame', similarity_metric='iou', reference_contains_dense_annotations=True)
+        config = HOTAConfig(id_alignment_method='per_frame', similarity_metric='iou', suppress_print_statements=True, reference_contains_dense_annotations=True)
         evaluator = HOTAReIDEvaluator(n_workers=20, config=config)
         evaluator.evaluate(ref_dfs, comp_dfs)
         global_hota_data = evaluator.get_global_hota_data()
@@ -207,17 +179,3 @@ class TestHOTA_meva_reid_short_frame_id_alignment:
 
         gt_fp = os.path.join(os.path.dirname(__file__), 'data', 'meva_rid_short', 'results_frame_id_alignment.json')
         validate_results(global_hota_data, gt_fp)  # raises AssertionError if any keys fail
-        
-
-
-
-    
-    
-
-    
-
-    
-
-
-
-
