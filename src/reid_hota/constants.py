@@ -16,4 +16,3 @@ class AnnotationColumn:
     ALT = "alt"
 
     BOX_HASH = "box_hash"
-
