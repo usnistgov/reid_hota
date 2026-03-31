@@ -216,7 +216,7 @@ class HOTAReIDEvaluator:
         """
         Get the results of the evaluation
         """
-        return self.global_hota_data.get_dict(), self.per_video_hota_data.get_dict(), self.per_frame_hota_data.get_dict()
+        return self.get_global_hota_data(), self.get_per_video_hota_data(), self.get_per_frame_hota_data()
     
     def get_global_hota_data(self) -> dict:
         """

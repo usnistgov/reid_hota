@@ -195,6 +195,8 @@ def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str 
     if cols_to_delete:
         cost_matrix = np.delete(cost_matrix, cols_to_delete, axis=1)
         comp_ids = np.delete(comp_ids, cols_to_delete)
+        if comp_hashes is not None:
+            comp_hashes = np.delete(comp_hashes, cols_to_delete)
 
     return CostMatrixDataFrame(i_ids=ref_ids, j_ids=comp_ids, i_hashes=ref_hashes, j_hashes=comp_hashes, cost_matrix=cost_matrix, video_id=dat.video_id, frame=dat.frame)
 
@@ -209,6 +211,8 @@ def build_HOTA_objects(id_similarity_per_video, config: HOTAConfig, per_video_co
     # Create a list of (video_id, frames) tuples to process
     video_chunks = list(id_similarity_per_video.values())
 
+    video_ids = list(id_similarity_per_video.keys())
+
     if n_workers > 1:
         # Process all videos in parallel - one chunk per video
         with Pool(processes=n_workers) as pool:
@@ -216,7 +220,7 @@ def build_HOTA_objects(id_similarity_per_video, config: HOTAConfig, per_video_co
             # Process each video in parallel
             if config.id_alignment_method == 'per_video':
                 # use the per-video id alignment cost matrix instead of the global one
-                video_results = pool.starmap(build_HOTA_objects_worker, [(chunk, per_video_cost_matrices[chunk[0].video_id].ref2comp_id_map, config) for chunk in video_chunks])
+                video_results = pool.starmap(build_HOTA_objects_worker, [(chunk, per_video_cost_matrices[vid].ref2comp_id_map, config) for vid, chunk in zip(video_ids, video_chunks)])
             elif config.id_alignment_method == 'per_frame':
                 video_results = pool.starmap(build_HOTA_objects_worker, [(chunk, None, config) for chunk in video_chunks])
             else:
@@ -234,11 +238,9 @@ def build_HOTA_objects(id_similarity_per_video, config: HOTAConfig, per_video_co
                 frame_dat = build_HOTA_objects_worker(cm_values, global_cost_matrix.ref2comp_id_map, config)
             video_results.append(frame_dat)
 
-    # video_results is a list[HOTA_DATA]
-    
-    # Organize results into per-video structure
-    per_frame_hota_data = {res[0].video_id: res for res in video_results}
-    per_video_hota_data = {res[0].video_id: merge_hota_data(res) for res in video_results}
+    # Organize results into per-video structure using video_ids from the dict keys
+    per_frame_hota_data = {vid: res for vid, res in zip(video_ids, video_results)}
+    per_video_hota_data = {vid: merge_hota_data(res) if res else HOTAData(config=config) for vid, res in zip(video_ids, video_results)}
     return per_video_hota_data, per_frame_hota_data
 
 
@@ -358,44 +360,6 @@ def jaccard_cost_matrices(matrices_dict: dict[str, list[CostMatrixData]], return
         
         return {'global': CostMatrixData(i_ids=all_i_ids, j_ids=all_j_ids, cost_matrix=cost_matrix, video_id=None, frame=None)}
         
-
-
-def extract_per_frame_data(input_dat: FrameExtractionInputData, class_id: np.dtype[np.object_] = None) -> list[VideoFrameData]:
-    ref_df = input_dat.ref_df
-    comp_df = input_dat.comp_df
-
-    cols = ref_df.columns.tolist()
-
-    if class_id is not None:
-        # only keep the relevant class
-        ref_df = ref_df[ref_df[AnnotationColumn.CLASS_ID] == class_id]
-        comp_df = comp_df[comp_df[AnnotationColumn.CLASS_ID] == class_id]
-    
-    # Group by frame
-    # return pd.api.typing.DataFrameGroupBy
-    ref_frames_df = ref_df.groupby(AnnotationColumn.FRAME)
-    comp_frames_df = comp_df.groupby(AnnotationColumn.FRAME)
-
-    k1 = set(ref_frames_df.groups.keys())
-    k2 = set(comp_frames_df.groups.keys())
-    shared_unique_frames = list(k1 | k2)  # union of keys
-    shared_unique_frames.sort()
-
-    dat_list = list()
-    for frame in shared_unique_frames:
-        if frame in ref_frames_df.groups:
-            ref_frame_df = ref_frames_df.get_group(frame)
-        else:
-            ref_frame_df = pd.DataFrame(columns=cols)
-        if frame in comp_frames_df.groups:
-            comp_frame_df = comp_frames_df.get_group(frame)
-        else:
-            comp_frame_df = pd.DataFrame(columns=cols)
-
-        # package into dataclass, adding class information
-        dat = VideoFrameData(ref_frame_df.values, comp_frame_df.values, input_dat.video_id, int(frame), class_id, cols)
-        dat_list.append(dat)
-    return dat_list
 
 
 def calculate_box_ious(bboxes1: np.ndarray, bboxes2: np.ndarray, box_format='xywh'):

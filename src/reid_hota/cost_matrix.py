@@ -26,10 +26,6 @@ class CostMatrixData:
         # lazily created to avoid unnecessary memory allocation and copy to parallel workers
         self._ref_id2idx_map = None
         self._comp_id2idx_map = None
-        self._match_rows = None
-        self._match_cols = None
-        self._ref2comp_idx_map = None
-        self._ref2comp_id_map = None
 
     def get_cost(self, i: np.dtype[np.object_], j: np.dtype[np.object_]) -> float:
         """Get the cost matrix value at coordinate (i,j).
@@ -52,7 +48,7 @@ class CostMatrixData:
         if len(i_idx) > 1:
             raise DuplicateIDError(True, self.video_id, self.frame, self.i_ids[i_idx])
         if len(j_idx) > 1:
-            raise DuplicateIDError(True, self.video_id, self.frame, self.j_ids[j_idx])
+            raise DuplicateIDError(False, self.video_id, self.frame, self.j_ids[j_idx])
 
         return float(self.cost_matrix[i_idx[0], j_idx[0]])
     
@@ -88,13 +84,11 @@ class CostMatrixData:
 
     def copy(self) -> 'CostMatrixData':
         """Returns a copy of the cost matrix.
-        
+
         Returns:
             A new CostMatrixData instance with copied data
         """
-        i_hashes = self.i_hashes.copy() if self.i_hashes is not None else None
-        j_hashes = self.j_hashes.copy() if self.j_hashes is not None else None
-        result = CostMatrixData(i_ids=self.i_ids.copy(), j_ids=self.j_ids.copy(), i_hashes=i_hashes, j_hashes=j_hashes, cost_matrix=self.cost_matrix.copy(), video_id=self.video_id, frame=self.frame)
+        result = CostMatrixData(i_ids=self.i_ids.copy(), j_ids=self.j_ids.copy(), cost_matrix=self.cost_matrix.copy(), video_id=self.video_id, frame=self.frame)
         result._ref_id2idx_map = self._ref_id2idx_map.copy() if self._ref_id2idx_map is not None else None
         result._comp_id2idx_map = self._comp_id2idx_map.copy() if self._comp_id2idx_map is not None else None
         result.match_rows = self.match_rows.copy() if self.match_rows is not None else None
@@ -102,7 +96,7 @@ class CostMatrixData:
         result.ref2comp_idx_map = self.ref2comp_idx_map.copy() if self.ref2comp_idx_map is not None else None
         result.ref2comp_id_map = self.ref2comp_id_map.copy() if self.ref2comp_id_map is not None else None
         return result
-    
+
 
 
 class CostMatrixDataFrame (CostMatrixData):

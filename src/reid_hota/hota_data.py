@@ -63,9 +63,9 @@ class HOTAData:
     association accuracy, and localization accuracy across multiple IoU thresholds.
     """
 
-    def __init__(self, 
-                 sim_cost_matrix: Optional[CostMatrixData],
-                 gt_to_tracker_id_map: Optional[dict[np.dtype[np.object_], np.dtype[np.object_]]] = None, 
+    def __init__(self,
+                 sim_cost_matrix: Optional[CostMatrixData] = None,
+                 gt_to_tracker_id_map: Optional[dict[np.dtype[np.object_], np.dtype[np.object_]]] = None,
                  config: HOTAConfig = HOTAConfig()):
         """
         Initialize HOTAData instance.
@@ -114,9 +114,10 @@ class HOTAData:
         # Frame metadata
         self.video_id: Optional[str] = None
         self.frame: Optional[int] = None
-        self.video_id = sim_cost_matrix.video_id
-        self.frame = sim_cost_matrix.frame
-        self._populate(sim_cost_matrix, gt_to_tracker_id_map)
+        if sim_cost_matrix is not None:
+            self.video_id = sim_cost_matrix.video_id
+            self.frame = sim_cost_matrix.frame
+            self._populate(sim_cost_matrix, gt_to_tracker_id_map)
 
     def get_dict(self) -> dict:
         """Get dictionary representation of HOTA data."""
