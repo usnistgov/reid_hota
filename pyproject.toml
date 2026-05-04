@@ -16,6 +16,7 @@ dependencies = [
     "numpy>=2.2.6",
     "pandas>=2.2.3",
     "pyarrow>=20.0.0",
+    "pyproj>=3.6",
     "scipy>=1.15.3",
 ]
 

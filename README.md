@@ -13,7 +13,7 @@
 - **Parallel Processing**: Multi-threaded computation for faster evaluation
 - **Flexible ID Assignment**: Flexible ID assignment per frame, video, and global
 - **Extraneous Box Handling**: Optional removal of comparison ids which don't have an assignment to a ground truth id, with those FP tracked separately. 
-- **Flexible ID Assignment Cost**: ID assignment cost can be box IOU or L2 distance in Lat/Long/Alt space.
+- **Flexible ID Assignment Cost**: ID assignment cost can be box IOU or L2 distance in meters via ECEF reprojection of Lat/Long/Alt coordinates.
 
 ## Installation
 
@@ -109,11 +109,11 @@ frame,id,x1,y1,x2,y2,object_type
 
 
 ### Lat/Long/Alt Assignment Cost 
-In addition to the traditional IOU cost between boxes, reid_hota supports performing detection assignment in lat/long and lat/long/alt space.
+In addition to the traditional IOU cost between boxes, reid_hota supports performing detection assignment using geographic coordinates. Coordinates are reprojected to ECEF (Earth-Centered, Earth-Fixed) via WGS84 before computing L2 distance, so all axes are in meters and the distance is physically meaningful regardless of location on Earth.
 
-If `HOTAConfig(similarity_metric='latlon')` then in addition to the normal columns, `['lat', 'lon']` are required.
+If `HOTAConfig(similarity_metric='latlon')` then in addition to the normal columns, `['lat', 'lon']` are required. Altitude is assumed to be 0.
 
-If  `HOTAConfig(similarity_metric='latlonalt')` then the required columns include `['lat', 'lon', 'alt']`
+If `HOTAConfig(similarity_metric='latlonalt')` then the required columns include `['lat', 'lon', 'alt']`. All three axes contribute to the ECEF distance in meters.
 
 ### Keeping Track of Errors
 
@@ -160,8 +160,8 @@ class HOTAConfig:
     similarity_metric: Literal['iou', 'latlon', 'latlonalt'] = 'iou'
     """Similarity metric to use:
     - 'iou': Intersection over Union for bounding boxes
-    - 'latlon': L2 distance for lat/lon coordinates
-    - 'latlonalt': L2 distance for lat/lon/alt coordinates
+    - 'latlon': L2 distance in meters via ECEF reprojection of lat/lon (alt assumed 0)
+    - 'latlonalt': L2 distance in meters via ECEF reprojection of lat/lon/alt
     """
 ```
 
@@ -229,7 +229,7 @@ The video_id will be None for global results, or have the video id (key into ref
 
 - `frame` will be None unless its the per_frame results.
 - `TP`, `FP`, `FN` will contain TP/FP/FN counts per IOU threshold. UnmatchedFP will contain any FP counts for which there was no assignment to a ground truth track. This behavior can be controlled using `reference_contains_dense_annotations` in the config.
-- `LocA` is effectivly the average matching box IOU.
+- `LocA` is effectively the average matching similarity score (average box IoU when using `iou` metric; average ECEF-based similarity when using `latlon`/`latlonalt`).
 - `HOTA` is the final composite metric. HOTA = sqrt(DetA * AssA)
 - `AssA` is the association accuracy.
 - `AssRe` is the association recall.
@@ -247,17 +247,20 @@ The hashes will only exist if the `box_hash` column is present and the config ha
 
 ### Lat/Lon Distance Similarities
 
-When using a `HOTAConfig(similarity_metric='latlon')` similarity score, the L2 distance between points is used for similarity. That L2 is converted into a similarity cost function [0, 1] as follows:
+When using `HOTAConfig(similarity_metric='latlon')` or `'latlonalt'`, geographic coordinates are first reprojected to ECEF (Earth-Centered, Earth-Fixed) using the WGS84 ellipsoid (via `pyproj`), so that all axes are in meters. The Euclidean distance in ECEF space is then converted to a similarity score in [0, 1]:
 
 ```python
-# Calculate squared differences for all pairs
-squared_diff = np.sum((points1 - points2) ** 2, axis=2)
-# Take square root to get Euclidean distance
-distances = np.sqrt(squared_diff)
-# use exp(-dist) to convert [0, inf] into [0, 1] with smaller distances being closer to similarity 1
-# dist/10 normalizes the L2 values over human relavant distances nicely into [0, 1] scores. 
-similarities = np.exp(-distances / 10)
+# Reproject to ECEF (x, y, z all in meters) using WGS84
+ecef1 = _latlon_to_ecef(latlonalt1)
+ecef2 = _latlon_to_ecef(latlonalt2)
+# L2 distance in meters
+diff = ecef1[:, np.newaxis, :] - ecef2[np.newaxis, :, :]
+distances = np.sqrt(np.sum(diff ** 2, axis=2))
+# Convert to similarity: exp(-d / decay) gives 1.0 at 0 m, ~0.37 at decay meters, ~0 beyond
+similarities = np.exp(-distances / ECEF_L2_DECAY_METERS)  # default decay = 10.0 m
 ```
+
+The decay constant `ECEF_L2_DECAY_METERS` (default `10.0`) controls the distance scale: similarity is ~0.37 at that distance and approaches 0 beyond it. Tune this value to match the expected inter-detection distances in your dataset.
 
 
 ### HOTA Metrics (and sub-metrics) are Vectors

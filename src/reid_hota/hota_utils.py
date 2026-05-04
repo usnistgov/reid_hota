@@ -3,6 +3,13 @@ import pandas as pd
 import copy
 from multiprocessing import Pool
 from typing import List
+from pyproj import Transformer
+
+# WGS84 geographic (lat, lon, alt) → WGS84 geocentric Cartesian (ECEF x, y, z), all in meters
+_WGS84_TO_ECEF = Transformer.from_crs("EPSG:4326", "EPSG:4978", always_xy=False)
+
+# Decay constant for exp(-d / ECEF_L2_DECAY_METERS): similarity = 0.37 at this distance (meters)
+ECEF_L2_DECAY_METERS = 10.0
 
 
 # Suppress the SettingWithCopyWarning
@@ -422,55 +429,62 @@ def calculate_box_ious(bboxes1: np.ndarray, bboxes2: np.ndarray, box_format='xyw
     return ious
 
 
-def calculate_latlonalt_l2(latlonalt1: np.ndarray, latlonalt2: np.ndarray):
+def _latlon_to_ecef(latlonalt: np.ndarray) -> np.ndarray:
     """
-    Calculates the L2 Euclidean distance between points in 3D space (lat, lon, alt).
+    Convert geographic coordinates to ECEF (Earth-Centered, Earth-Fixed) meters.
 
     Args:
-        latlonalt1: Array of shape (N, 3) containing lat long alt
-        latlonalt2: Array of shape (M, 3) containing lat long alt
+        latlonalt: Array of shape (N, 2) or (N, 3) with columns [lat_deg, lon_deg, alt_m].
+                   Altitude defaults to 0 when not provided.
 
     Returns:
-        Array of shape (N, M) containing pairwise L2 distances
+        Array of shape (N, 3) with columns [x, y, z] in meters.
     """
-    # Reshape to allow broadcasting: (N,3) -> (N,1,3) and (M,3) -> (1,M,3)
-    points1 = latlonalt1[:, np.newaxis, :]
-    points2 = latlonalt2[np.newaxis, :, :]
-    
-    # Calculate squared differences for all pairs
-    squared_diff = np.sum((points1 - points2) ** 2, axis=2)
-    # Take square root to get Euclidean distance
-    distances = np.sqrt(squared_diff)
-    similarities = np.exp(-distances / 10)
-    
-    return similarities
+    alt = latlonalt[:, 2] if latlonalt.shape[1] >= 3 else np.zeros(len(latlonalt))
+    x, y, z = _WGS84_TO_ECEF.transform(latlonalt[:, 0], latlonalt[:, 1], alt)
+    return np.column_stack([x, y, z])
+
+
+def calculate_latlonalt_l2(latlonalt1: np.ndarray, latlonalt2: np.ndarray):
+    """
+    Calculates pairwise L2 distance in meters between 3D geographic points.
+
+    Inputs are reprojected to ECEF (Earth-Centered, Earth-Fixed) so that all
+    three axes are in meters before computing the Euclidean distance.
+
+    Args:
+        latlonalt1: Array of shape (N, 3) containing [lat_deg, lon_deg, alt_m]
+        latlonalt2: Array of shape (M, 3) containing [lat_deg, lon_deg, alt_m]
+
+    Returns:
+        Array of shape (N, M) containing pairwise similarity scores in [0, 1]
+    """
+    ecef1 = _latlon_to_ecef(latlonalt1)  # (N, 3) meters
+    ecef2 = _latlon_to_ecef(latlonalt2)  # (M, 3) meters
+    diff = ecef1[:, np.newaxis, :] - ecef2[np.newaxis, :, :]
+    distances = np.sqrt(np.sum(diff ** 2, axis=2))
+    return np.exp(-distances / ECEF_L2_DECAY_METERS)
 
 
 def calculate_latlon_l2(latlon1: np.ndarray, latlon2: np.ndarray):
     """
-    Calculates the L2 Euclidean distance between points in 2D space (lat, lont).
+    Calculates pairwise L2 distance in meters between 2D geographic points.
+
+    Inputs are reprojected to ECEF (Earth-Centered, Earth-Fixed) at altitude 0
+    so that both axes are in meters before computing the Euclidean distance.
 
     Args:
-        latlon1: Array of shape (N, 2) containing lat long
-        latlon2: Array of shape (M, 2) containing lat long
+        latlon1: Array of shape (N, 2) containing [lat_deg, lon_deg]
+        latlon2: Array of shape (M, 2) containing [lat_deg, lon_deg]
 
     Returns:
-        Array of shape (N, M) containing pairwise L2 distances
+        Array of shape (N, M) containing pairwise similarity scores in [0, 1]
     """
-    # Reshape to allow broadcasting: (N,2) -> (N,1,2) and (M,2) -> (1,M,2)
-    points1 = latlon1[:, np.newaxis, :]
-    points2 = latlon2[np.newaxis, :, :]
-    
-    # Calculate squared differences for all pairs
-    squared_diff = np.sum((points1 - points2) ** 2, axis=2)
-    
-    # Take square root to get Euclidean distance
-    distances = np.sqrt(squared_diff)
-    # use exp(-d/10) to get a [0,1] value that decays from 1 to 0 as distances increase
-    # the d/10 calibrates the distance to similarity to better utilize the [0,1] range for normal inter-human distances
-    similarities = np.exp(-distances / 10)
-    
-    return similarities
+    ecef1 = _latlon_to_ecef(latlon1)  # (N, 3) meters, alt=0
+    ecef2 = _latlon_to_ecef(latlon2)  # (M, 3) meters, alt=0
+    diff = ecef1[:, np.newaxis, :] - ecef2[np.newaxis, :, :]
+    distances = np.sqrt(np.sum(diff ** 2, axis=2))
+    return np.exp(-distances / ECEF_L2_DECAY_METERS)
 
 
 
