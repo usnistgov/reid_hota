@@ -247,7 +247,13 @@ def build_HOTA_objects(id_similarity_per_video, config: HOTAConfig, per_video_co
 
     # Organize results into per-video structure using video_ids from the dict keys
     per_frame_hota_data = {vid: res for vid, res in zip(video_ids, video_results)}
-    per_video_hota_data = {vid: merge_hota_data(res) if res else HOTAData(config=config) for vid, res in zip(video_ids, video_results)}
+
+    def _empty_hota_data(vid: str, config: HOTAConfig) -> HOTAData:
+        d = HOTAData(config=config)
+        d.video_id = vid  # preserve video id in empty config, so that this empty video contributes nothing to score, but still exists.
+        return d
+
+    per_video_hota_data = {vid: merge_hota_data(res) if res else _empty_hota_data(vid, config) for vid, res in zip(video_ids, video_results)}
     return per_video_hota_data, per_frame_hota_data
 
 
@@ -264,7 +270,6 @@ def compute_cost_per_video_per_frame(ref_dfs: dict[str, pd.DataFrame], comp_dfs:
     else:
         results = [compute_id_alignment_similarity_from_df(dat, similarity_metric) for dat in frame_extraction_work_queue]
 
-    id_similarity_per_video = {}
     for video_id, result in results:
         id_similarity_per_video[video_id] = result
 
