@@ -6,12 +6,12 @@ A fast, parallel implementation of HOTA metrics for re-identification and tracki
 
 __version__ = "0.3.6"
 
-from .reid_hota import HOTAReIDEvaluator
-from .hota_data import HOTAData
 from .config import HOTAConfig
+from .hota_data import HOTAData
+from .reid_hota import HOTAReIDEvaluator
 
 __all__ = [
     "HOTAReIDEvaluator",
-    "HOTAData", 
+    "HOTAData",
     "HOTAConfig"
-] 
+]

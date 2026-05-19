@@ -1,13 +1,13 @@
 import math
+from dataclasses import dataclass
+
 import numpy as np
 import pandas as pd
-from dataclasses import dataclass
-from typing import Optional
 
-from .cost_matrix import CostMatrixData, CostMatrixDataFrame
-from .sparse_matrix import Sparse2DMatrix, Sparse1DMatrix
 from .config import HOTAConfig
+from .cost_matrix import CostMatrixData, CostMatrixDataFrame
 from .hota_errors import NonFiniteSimilarityValueError
+from .sparse_matrix import Sparse1DMatrix, Sparse2DMatrix
 
 
 @dataclass
@@ -25,31 +25,31 @@ class VideoFrameData:
     frame: int  # the video frame number
     col_names: list[str]
 
-    
+
 
 @dataclass
 class HOTAMetrics:
     """Container for HOTA metric data"""
     # Core counts
     tp: np.ndarray
-    fn: np.ndarray  
+    fn: np.ndarray
     fp: np.ndarray
     unmatched_fp: float  # FP that are not matched to any ground truth id
-    
+
     # Location accuracy
     loc_a_unnorm: np.ndarray
     loc_a: np.ndarray  # The average similarity score for matching detections
-    
+
     # Association metrics
     ass_a: np.ndarray
     ass_re: np.ndarray
     ass_pr: np.ndarray
-    
-    # Detection metrics  
+
+    # Detection metrics
     det_a: np.ndarray
     det_re: np.ndarray
     det_pr: np.ndarray  # equivalent to precision used in mAP
-    
+
     # Final metrics
     hota: np.ndarray
     owta: np.ndarray
@@ -59,15 +59,15 @@ class HOTAMetrics:
 class HOTAData:
     """
     Class for managing HOTA (Higher Order Tracking Accuracy) metric calculation and data.
-    
+
     This class handles the computation of HOTA metrics including detection accuracy,
     association accuracy, and localization accuracy across multiple IoU thresholds.
     """
 
     def __init__(self,
-                 sim_cost_matrix: Optional[CostMatrixData] = None,
-                 gt_to_tracker_id_map: Optional[dict[np.dtype[np.object_], np.dtype[np.object_]]] = None,
-                 config: Optional[HOTAConfig] = None):
+                 sim_cost_matrix: CostMatrixData | None = None,
+                 gt_to_tracker_id_map: dict[np.dtype[np.object_], np.dtype[np.object_]] | None = None,
+                 config: HOTAConfig | None = None):
         """
         Initialize HOTAData instance.
 
@@ -115,8 +115,8 @@ class HOTAData:
         }
 
         # Frame metadata
-        self.video_id: Optional[str] = None
-        self.frame: Optional[int] = None
+        self.video_id: str | None = None
+        self.frame: int | None = None
         if sim_cost_matrix is not None:
             self.video_id = sim_cost_matrix.video_id
             self.frame = sim_cost_matrix.frame
@@ -149,18 +149,18 @@ class HOTAData:
         if 'TP_hashes' in self.sparse_data:
             ret['TP_hashes'] = list(self.sparse_data['TP_hashes'])
         return ret
-        
+
 
     def __iadd__(self, other: 'HOTAData') -> 'HOTAData':
         """
         Add another HOTAData to this one in-place.
-        
+
         Note: this only modifies TP, FN, FP, LocA, matches_counts, ref_id_counts, comp_id_counts.
         The other fields are not updated, and will need to be recomputed later with _finalize().
-        
+
         Args:
             other: Another HOTAData to add to this one.
-            
+
         Returns:
             Self, with values from other added.
         """
@@ -170,31 +170,31 @@ class HOTAData:
         self.metrics.fp += other.metrics.fp
         self.metrics.unmatched_fp += other.metrics.unmatched_fp
         self.metrics.loc_a_unnorm += other.metrics.loc_a_unnorm
-        
+
         # Add sparse data
         for a, alpha in enumerate(self.iou_thresholds):
             self.sparse_data['matches_counts'][a] += other.sparse_data['matches_counts'][a]
-            
+
         self.sparse_data['ref_id_counts'] += other.sparse_data['ref_id_counts']
         self.sparse_data['comp_id_counts'] += other.sparse_data['comp_id_counts']
-        
+
         return self
 
     def is_equal(self, other: 'HOTAData', tol: float = 1e-8) -> bool:
         """
         Check if this HOTAData object is equal to another one.
-        
+
         Args:
             other: Another HOTAData object to compare with
             tol: Tolerance for floating point comparisons
-            
+
         Returns:
             bool: True if the objects are equal, False otherwise
         """
         # Check basic attributes
         if self.video_id != other.video_id or self.frame != other.frame:
             return False
-            
+
         if not np.array_equal(self.iou_thresholds, other.iou_thresholds):
             return False
 
@@ -218,25 +218,25 @@ class HOTAData:
         for key, val in self.sparse_data.items():
             other_val = other.sparse_data[key]
             if isinstance(val, list):
-                if len(val) != len(other_val) or any(a != b for a, b in zip(val, other_val)):
+                if len(val) != len(other_val) or any(a != b for a, b in zip(val, other_val, strict=False)):
                     return False
             elif val != other_val:
                 return False
 
         return True
-    
+
     def _add_TP_hashes(self, hashes: list[np.dtype[np.object_]], iou_threshold: float):
         key = 'TP_hashes'
         if key not in self.sparse_data:
             self.sparse_data[key] = [set() for _ in range(len(self.iou_thresholds))]
         self.sparse_data[key][iou_threshold].update(hashes)
-    
+
     def _add_FN_hashes(self, hashes: list[np.dtype[np.object_]], iou_threshold: float):
         key = 'FN_hashes'
         if key not in self.sparse_data:
             self.sparse_data[key] = [set() for _ in range(len(self.iou_thresholds))]
         self.sparse_data[key][iou_threshold].update(hashes)
-    
+
     def _add_FP_hashes(self, hashes: list[np.dtype[np.object_]], iou_threshold: float):
         key = 'FP_hashes'
         if key not in self.sparse_data:
@@ -249,69 +249,69 @@ class HOTAData:
         frame_cost_matrix.construct_assignment()
         frame_cost_matrix.construct_id2idx_lookup()
         return frame_cost_matrix.ref2comp_id_map
-    
-    def _extract_frame_matches(self, lcl_ref_ids: np.ndarray, lcl_comp_ids: np.ndarray, 
+
+    def _extract_frame_matches(self, lcl_ref_ids: np.ndarray, lcl_comp_ids: np.ndarray,
                           gt_to_tracker_id_map: dict) -> tuple[np.ndarray, np.ndarray]:
         """Extract matched ID pairs that exist in both the global mapping and current frame."""
         if len(lcl_ref_ids) == 0 or len(lcl_comp_ids) == 0:
             return np.array([], dtype=np.object_), np.array([], dtype=np.object_)
-        
+
         comp_ids_set = set(lcl_comp_ids)
         frame_matches_id = []
-        
+
         # Extract matches relevant to this frame
         for gt_id in lcl_ref_ids:
             if gt_id in gt_to_tracker_id_map:
                 matched_tracker_id = gt_to_tracker_id_map[gt_id]
                 if matched_tracker_id in comp_ids_set:
                     frame_matches_id.append((gt_id, matched_tracker_id))
-        
+
         if frame_matches_id:
-            match_ref_ids, match_comp_ids = zip(*frame_matches_id)
+            match_ref_ids, match_comp_ids = zip(*frame_matches_id, strict=False)
             return np.array(match_ref_ids, dtype=np.object_), np.array(match_comp_ids, dtype=np.object_)
         else:
             return np.array([], dtype=np.object_), np.array([], dtype=np.object_)
-        
+
     def _filter_by_ground_truth_ids(self, lcl_ref_ids: np.ndarray, lcl_comp_ids: np.ndarray,
-                                match_ref_ids: np.ndarray, match_comp_ids: np.ndarray, 
+                                match_ref_ids: np.ndarray, match_comp_ids: np.ndarray,
                                 gids: list) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Filter all IDs to only include specified ground truth IDs and their matches."""
         # Filter matches to only include specified ground truth IDs
         mask = np.isin(match_ref_ids, gids)
         removed_ref_ids = match_ref_ids[np.invert(mask)]
         removed_comp_ids = match_comp_ids[np.invert(mask)]
-        
+
         filtered_match_ref_ids = match_ref_ids[mask]
         filtered_match_comp_ids = match_comp_ids[mask]
-        
+
         # Remove filtered IDs from local ID lists
         filtered_lcl_ref_ids = np.setdiff1d(lcl_ref_ids, removed_ref_ids)
         filtered_lcl_comp_ids = np.setdiff1d(lcl_comp_ids, removed_comp_ids)
-        
+
         return filtered_lcl_ref_ids, filtered_lcl_comp_ids, filtered_match_ref_ids, filtered_match_comp_ids
-    
+
     def _apply_comp_id_filtering(self, lcl_comp_ids: np.ndarray, match_comp_ids: np.ndarray,
                             gt_to_tracker_id_map: dict) -> tuple[np.ndarray, np.ndarray]:
         """Optionally filter comparison IDs to only include those with ground truth matches."""
-        
-        
+
+
         valid_comp_ids = list(gt_to_tracker_id_map.values())
         filtered_lcl_comp_ids = lcl_comp_ids[np.isin(lcl_comp_ids, valid_comp_ids)]
         filtered_match_comp_ids = match_comp_ids[np.isin(match_comp_ids, valid_comp_ids)]
         unmatched_fp = len(lcl_comp_ids) - len(filtered_lcl_comp_ids)
         return filtered_lcl_comp_ids, filtered_match_comp_ids, unmatched_fp
-        
-    
-    def _get_matched_similarities(self, sim_cost_matrix: CostMatrixData, 
+
+
+    def _get_matched_similarities(self, sim_cost_matrix: CostMatrixData,
                              match_ref_ids: np.ndarray, match_comp_ids: np.ndarray) -> np.ndarray:
         """Extract similarity values for matched ID pairs and validate them."""
         if len(match_ref_ids) == 0:
             return np.array([])
-        
+
         matched_similarity_vals = np.array([
-            sim_cost_matrix.get_cost(i, j) for i, j in zip(match_ref_ids, match_comp_ids)
+            sim_cost_matrix.get_cost(i, j) for i, j in zip(match_ref_ids, match_comp_ids, strict=False)
         ])
-        
+
         # Validate similarity values are finite
         if np.any(~np.isfinite(matched_similarity_vals)):
             raise NonFiniteSimilarityValueError(
@@ -321,16 +321,16 @@ class HOTAData:
                 sim_cost_matrix.j_ids,
                 sim_cost_matrix.cost_matrix
             )
-        
+
         return matched_similarity_vals
 
-    def _populate(self, sim_cost_matrix: CostMatrixData, 
+    def _populate(self, sim_cost_matrix: CostMatrixData,
                   gt_to_tracker_id_map: dict[np.dtype[np.object_], np.dtype[np.object_]]):
-        
+
         # Step 1: Extract reference (ground truth) and comparison (tracker) IDs from this frame
         lcl_ref_ids = sim_cost_matrix.i_ids
         lcl_comp_ids = sim_cost_matrix.j_ids
-        
+
         # Step 2: Establish ID mapping between ground truth and tracker
         if gt_to_tracker_id_map is None:
             # If no global mapping provided, create frame-level mapping using Hungarian algorithm
@@ -360,34 +360,34 @@ class HOTAData:
             self.sparse_data['ref_id_counts'].add_at(ref_id, 1)
         for comp_id in lcl_comp_ids:
             self.sparse_data['comp_id_counts'].add_at(comp_id, 1)
-        
+
         # Step 8: Compute metrics across all IoU thresholds
-        
+
         # Pre-compute common values outside the loop
         num_lcl_ref = len(lcl_ref_ids)
         num_lcl_comp = len(lcl_comp_ids)
         iou_thresholds_array = self.iou_thresholds
         eps = np.finfo('float').eps
-        
+
         # Vectorized threshold comparison for all IoU thresholds at once
         if len(matched_similarity_vals) > 0:
             # Create a 2D mask: (num_matches, num_thresholds)
             threshold_masks = matched_similarity_vals[:, np.newaxis] >= (iou_thresholds_array - eps)[np.newaxis, :]
-            
+
             # Count matches for each threshold using vectorized sum
             num_matches_per_threshold = np.sum(threshold_masks, axis=0)
-            
+
             # Vectorized updates for TP, FN, FP
             self.metrics.tp += num_matches_per_threshold
             self.metrics.fn += num_lcl_ref - num_matches_per_threshold
             self.metrics.fp += num_lcl_comp - num_matches_per_threshold
-            
+
             # Pre-compute masks for hash operations if needed
             if isinstance(sim_cost_matrix, CostMatrixDataFrame) and sim_cost_matrix.i_hashes is not None and sim_cost_matrix.j_hashes is not None:
                 # Create index mappings for faster lookups
                 ref_id_to_idx = {id_val: idx for idx, id_val in enumerate(sim_cost_matrix.i_ids)}
                 comp_id_to_idx = {id_val: idx for idx, id_val in enumerate(sim_cost_matrix.j_ids)}
-            
+
             # Process each threshold
             for a in range(len(self.iou_thresholds)):
                 # Get matches for this threshold using pre-computed mask
@@ -399,49 +399,49 @@ class HOTAData:
                     sub_match_sim_vals = matched_similarity_vals[threshold_mask]
                     # Vectorized localization accuracy update
                     self.metrics.loc_a_unnorm[a] += float(np.sum(sub_match_sim_vals))
-                    
+
                     # Batch update matches_counts - this is the main bottleneck we can't fully vectorize
                     # due to the sparse matrix structure, but we can optimize the loop
-                    for ref_id, comp_id in zip(alpha_match_ref_ids, alpha_match_comp_ids):
+                    for ref_id, comp_id in zip(alpha_match_ref_ids, alpha_match_comp_ids, strict=False):
                         self.sparse_data['matches_counts'][a].add_at(ref_id, comp_id, 1)
-                
+
                     # Handle hash operations if needed
                     if isinstance(sim_cost_matrix, CostMatrixDataFrame) and sim_cost_matrix.i_hashes is not None and sim_cost_matrix.j_hashes is not None:
                     # Vectorized index lookup using pre-computed mappings
-                    
+
                         matched_ref_indices = np.array([ref_id_to_idx[id_val] for id_val in alpha_match_ref_ids], dtype=int)
                         matched_comp_indices = np.array([comp_id_to_idx[id_val] for id_val in alpha_match_comp_ids], dtype=int)
-                        
+
                         # Create boolean masks more efficiently
                         matched_ref_mask = np.zeros(len(sim_cost_matrix.i_ids), dtype=bool)
                         matched_comp_mask = np.zeros(len(sim_cost_matrix.j_ids), dtype=bool)
                         matched_ref_mask[matched_ref_indices] = True
                         matched_comp_mask[matched_comp_indices] = True
-                        
+
                         # Extract hashes using masks
                         matched_ref_hashes = sim_cost_matrix.i_hashes[matched_ref_mask]
                         matched_comp_hashes = sim_cost_matrix.j_hashes[matched_comp_mask]
                         non_matched_ref_hashes = sim_cost_matrix.i_hashes[~matched_ref_mask]
                         non_matched_comp_hashes = sim_cost_matrix.j_hashes[~matched_comp_mask]
-                        
+
                         self._add_TP_hashes(matched_ref_hashes, a)
                         self._add_TP_hashes(matched_comp_hashes, a)
                         self._add_FN_hashes(non_matched_ref_hashes, a)
                         self._add_FP_hashes(non_matched_comp_hashes, a)
-                    
+
         else:
             # No matches case - vectorized update
             self.metrics.fn += num_lcl_ref
             self.metrics.fp += num_lcl_comp
-            
+
             # Handle hashes for no-matches case
             if isinstance(sim_cost_matrix, CostMatrixDataFrame) and sim_cost_matrix.i_hashes is not None and sim_cost_matrix.j_hashes is not None:
                 for a in range(len(self.iou_thresholds)):
                     self._add_FN_hashes(sim_cost_matrix.i_hashes, a)
                     self._add_FP_hashes(sim_cost_matrix.j_hashes, a)
-                    
+
         self._finalize()
-        
+
     def _finalize(self):
         self.metrics.ass_a.fill(0)  # reset to zero to make _finalize idempotent
         self.metrics.ass_re.fill(0)  # reset to zero to make _finalize idempotent
@@ -455,7 +455,7 @@ class HOTAData:
                 self.metrics.ass_a[a] += v * (v / max(1, (rid_count + cid_count - v)))
                 self.metrics.ass_re[a] += v *(v / max(1, rid_count))
                 self.metrics.ass_pr[a] += v *(v / max(1, cid_count))
-            
+
         denom = np.maximum(1, self.metrics.tp)
         self.metrics.ass_a /= denom
         self.metrics.ass_re /= denom
@@ -472,4 +472,3 @@ class HOTAData:
         # ID-Recall = DetRe
         # ID-Precision = DetPr
         self.metrics.idf1 = self.metrics.tp / np.maximum(1, self.metrics.tp + (0.5 * self.metrics.fn) + (0.5 * self.metrics.fp))
-        

@@ -6,16 +6,14 @@ global, each metric cell holding an object-typed numpy array) so any change
 to the export layout is intentional.
 """
 import json
-import os
 
 import numpy as np
 import pandas as pd
 import pytest
-
-from reid_hota import HOTAConfig, HOTAReIDEvaluator
+from conftest import make_df
 from test_utils import load_hota_results, save_hota_results
 
-from conftest import make_df
+from reid_hota import HOTAConfig, HOTAReIDEvaluator
 
 
 def _basic_cfg(**overrides):

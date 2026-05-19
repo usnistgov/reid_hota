@@ -3,10 +3,9 @@ Semantic correctness tests — hand-crafted data with analytically known answers
 """
 import numpy as np
 import pytest
+from conftest import empty_df, make_df
 
 from reid_hota import HOTAConfig, HOTAReIDEvaluator
-
-from conftest import empty_df, make_df
 
 
 def _basic_cfg(**overrides):

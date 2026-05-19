@@ -1,12 +1,14 @@
-import numpy as np
-from typing import Optional, List, Literal
-from numpy.typing import NDArray
 from dataclasses import dataclass, field
+from typing import Literal
+
+import numpy as np
+from numpy.typing import NDArray
+
 from .hota_errors import (
-    InvalidIDAlignmentMethodError,
-    InvalidSimilarityMetricError,
     EmptyIOUThresholdsError,
-    InvalidIOUThresholdsRangeError
+    InvalidIDAlignmentMethodError,
+    InvalidIOUThresholdsRangeError,
+    InvalidSimilarityMetricError,
 )
 
 
@@ -22,31 +24,31 @@ class HOTAConfig:
     read-only in __post_init__. Construct a new HOTAConfig if you need to
     change a value.
     """
-    
-    class_ids: Optional[List[int]] = None
+
+    class_ids: list[int] | None = None
     """List of class IDs to evaluate. If None, all classes are evaluated."""
-    
-    gids: Optional[List[int]] = None  
+
+    gids: list[int] | None = None
     """Ground truth IDs to use for evaluation. If provided, all other IDs are ignored."""
-    
+
     id_alignment_method: Literal['global', 'per_video', 'per_frame'] = 'global'
     """Method for aligning IDs between reference and comparison data:
     - 'global': Align IDs across all videos globally
-    - 'per_video': Align IDs separately for each video  
+    - 'per_video': Align IDs separately for each video
     - 'per_frame': Align IDs separately for each frame
     """
-    
+
     track_fp_fn_tp_box_hashes: bool = False
     """Whether to track box hashes for detailed FP/FN/TP analysis."""
-    
+
     reference_contains_dense_annotations: bool = False
     """Whether the reference data dataframes contain dense annotations. If False, non-matched comparison IDs are removed to reduce FP counts to only those global ids which have a match in the reference data. The non-matching comparison ids are counted in an UnmatchedFP field in the HOTA data.
-    Consider the case where only 2 objects are tracked in a crowded ground truth video file. The comparison results will likely have many more boxes for the confuser objects for which GT data is missing (this is non-dense ground truth). In other words, this flag is useful when the reference/ground truth data which does not have full dense annotations of all objects in the video. 
+    Consider the case where only 2 objects are tracked in a crowded ground truth video file. The comparison results will likely have many more boxes for the confuser objects for which GT data is missing (this is non-dense ground truth). In other words, this flag is useful when the reference/ground truth data which does not have full dense annotations of all objects in the video.
     """
-    
+
     iou_thresholds: NDArray[np.float64] = field(default_factory=lambda: np.arange(0.1, 0.99, 0.1))
     """Array of IoU thresholds to evaluate at."""
-    
+
     similarity_metric: Literal['iou', 'latlon', 'latlonalt'] = 'iou'
     """Similarity metric to use:
     - 'iou': Intersection over Union for bounding boxes

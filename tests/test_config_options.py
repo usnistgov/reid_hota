@@ -3,10 +3,9 @@ Tests for HOTAConfig options: dense/sparse, class_ids, gids, box-hash tracking, 
 """
 import numpy as np
 import pytest
+from conftest import make_df
 
 from reid_hota import HOTAConfig, HOTAReIDEvaluator
-
-from conftest import empty_df, make_df
 
 
 def _cfg(**overrides):
@@ -175,12 +174,12 @@ def test_box_hash_tracking_populates_keys():
 
 
 def test_box_hash_tracking_requires_box_hash_column():
-    """track_fp_fn_tp_box_hashes=True without a box_hash column → AssertionError."""
+    """track_fp_fn_tp_box_hashes=True without a box_hash column → ValueError."""
     rows = [{'frame': 0, 'id': 1, 'x1': 0, 'y1': 0, 'x2': 1, 'y2': 1}]
     df = make_df(rows)  # no box_hash column
     cfg = _cfg(track_fp_fn_tp_box_hashes=True)
     ev = HOTAReIDEvaluator(n_workers=0, config=cfg)
-    with pytest.raises(AssertionError, match="box_hash"):
+    with pytest.raises(ValueError, match="box_hash"):
         ev.evaluate({'v': df}, {'v': df.copy()})
 
 

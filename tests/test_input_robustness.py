@@ -4,11 +4,10 @@ float frame indices, and the smallest possible video.
 """
 import numpy as np
 import pytest
+from conftest import make_df
 
 from reid_hota import HOTAConfig, HOTAReIDEvaluator
 from reid_hota.hota_utils import calculate_box_ious
-
-from conftest import make_df
 
 
 def _cfg(**overrides):

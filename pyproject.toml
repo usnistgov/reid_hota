@@ -61,5 +61,30 @@ exclude = [
 [tool.pytest.ini_options]
 addopts = ["-s"]
 
+[tool.ruff]
+line-length = 140
+target-version = "py310"
+extend-exclude = ["examples", "tmp*.py"]
+
+[tool.ruff.lint]
+# Conservative set: real-bug catches (pyflakes) + import hygiene + a handful of
+# pycodestyle warnings. Style-only rules (line length, naming) are off so
+# library code can keep its current conventions.
+select = ["F", "W", "I", "B", "UP"]
+ignore = [
+    "B008",  # pandas/numpy idioms call functions as defaults sometimes
+    "B007",  # loop var unused — harmless in many enumerate cases
+    "UP015", # don't force open() to drop redundant mode
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["F841"]  # tests may bind intermediates for clarity even if unused
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
 [project.urls]
 Homepage = "https://github.com/usnistgov/reid_hota"

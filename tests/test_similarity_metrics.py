@@ -6,6 +6,7 @@ not its asymptotic tail.
 """
 import numpy as np
 import pytest
+from conftest import make_df
 
 from reid_hota import HOTAConfig, HOTAReIDEvaluator
 from reid_hota.hota_utils import (
@@ -13,8 +14,6 @@ from reid_hota.hota_utils import (
     calculate_latlon_l2,
     calculate_latlonalt_l2,
 )
-
-from conftest import make_df
 
 
 def _cfg(similarity_metric, **overrides):

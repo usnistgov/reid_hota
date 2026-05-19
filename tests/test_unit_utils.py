@@ -14,14 +14,13 @@ from reid_hota.constants import BOX_FORMAT
 from reid_hota.cost_matrix import CostMatrixDataFrame
 from reid_hota.hota_errors import MissingVideoIDError, UnsupportedBoxFormatError
 from reid_hota.hota_utils import (
+    ECEF_L2_DECAY_METERS,
     calculate_box_ious,
     calculate_latlon_l2,
     calculate_latlonalt_l2,
     merge_hota_data,
     normalize_cost_matrix,
-    ECEF_L2_DECAY_METERS,
 )
-
 
 # ---------------------------------------------------------------------------
 # Sanity: box format constant

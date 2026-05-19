@@ -5,13 +5,11 @@ These guard against crashes from videos that have no data on one or both sides,
 missing keys in the comparison/reference dicts, and duplicate IDs within a frame.
 """
 import numpy as np
-import pandas as pd
 import pytest
+from conftest import empty_df, make_df
 
 from reid_hota import HOTAConfig, HOTAReIDEvaluator
 from reid_hota.hota_errors import DuplicateIDError
-
-from conftest import empty_df, make_df
 
 
 def _basic_cfg(**overrides):

@@ -41,7 +41,7 @@ class InvalidSimilarityMetricError(HOTAConfigError):
 
 class EmptyIOUThresholdsError(HOTAConfigError):
     """Raised when IOU thresholds list is empty."""
-    
+
     def __init__(self):
         message = "IOU thresholds list cannot be empty"
         super().__init__(message)

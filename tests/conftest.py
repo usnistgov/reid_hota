@@ -7,17 +7,13 @@ Two main exports:
 """
 import multiprocessing as mp
 import os
-import sys
 
 import numpy as np
 import pandas as pd
 import pytest
+from test_utils import compute_box_hash
 
-# Make the local source tree importable even if reid_hota isn't installed
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
-from reid_hota.constants import AnnotationColumn  # noqa: E402
-
+from reid_hota.constants import AnnotationColumn
 
 # ---------------------------------------------------------------------------
 # Session setup
@@ -52,25 +48,6 @@ _DEFAULTS = {
 
 _BOX_COLS = (AnnotationColumn.X1, AnnotationColumn.Y1, AnnotationColumn.X2, AnnotationColumn.Y2)
 _LATLONALT_COLS = (AnnotationColumn.LAT, AnnotationColumn.LON, AnnotationColumn.ALT)
-
-
-def _compute_box_hash(row: dict) -> str:
-    """Same f-string hash formula as the legacy test fixture (test_meva_reid_short.py)."""
-    parts = []
-    for col in (
-        AnnotationColumn.FRAME,
-        AnnotationColumn.OBJECT_ID,
-        AnnotationColumn.X1,
-        AnnotationColumn.Y1,
-        AnnotationColumn.X2,
-        AnnotationColumn.Y2,
-        AnnotationColumn.CLASS_ID,
-        AnnotationColumn.LAT,
-        AnnotationColumn.LON,
-        AnnotationColumn.ALT,
-    ):
-        parts.append(f"{col}:{row.get(col, _DEFAULTS[col])}")
-    return str(hash(" ".join(parts)))
 
 
 def make_df(
@@ -110,7 +87,7 @@ def make_df(
         for col in cols:
             data[col].append(row.get(col, _DEFAULTS[col]))
         if include_box_hash:
-            hashes.append(_compute_box_hash(row))
+            hashes.append(compute_box_hash(row, defaults=_DEFAULTS))
 
     df = pd.DataFrame(data)
 
@@ -162,7 +139,7 @@ def base_tracking_data():
 
         for df in (gt_df, pred_df):
             df[AnnotationColumn.BOX_HASH] = df.apply(
-                lambda row: _compute_box_hash(row.to_dict()), axis=1
+                lambda row: compute_box_hash(row.to_dict()), axis=1
             )
 
         key = fn.replace('.csv', '')

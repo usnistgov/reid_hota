@@ -1,30 +1,66 @@
-import numpy as np
-import pandas as pd
+"""
+Pipeline orchestration utilities for the HOTA evaluator.
+
+This module owns the glue between stages 1, 3, and 4 of the pipeline
+(per-frame similarity computation, in-frame duplicate-comp dedup, HOTA
+object construction, and per-frame → per-video merging). The pure math
+lives in sibling modules:
+
+- ``similarity``  — IoU and ECEF L2 primitives
+- ``jaccard``     — stage-2 Jaccard aggregation across frames
+
+The symbols moved to those modules are re-exported below so existing
+imports from ``reid_hota.hota_utils`` keep working.
+"""
 import copy
 from multiprocessing import Pool
-from typing import List, Optional
-from pyproj import Transformer
 
-# WGS84 geographic (lat, lon, alt) → WGS84 geocentric Cartesian (ECEF x, y, z), all in meters
-_WGS84_TO_ECEF = Transformer.from_crs("EPSG:4326", "EPSG:4978", always_xy=False)
+import numpy as np
+import pandas as pd
 
-# Decay constant for exp(-d / ECEF_L2_DECAY_METERS): similarity = 0.37 at this distance (meters)
-ECEF_L2_DECAY_METERS = 10.0
-
-
-
-# Suppress the SettingWithCopyWarning
-pd.options.mode.chained_assignment = None
-
-from .cost_matrix import CostMatrixData, CostMatrixDataFrame
-from .hota_data import VideoFrameData, FrameExtractionInputData, HOTAData
 from .config import HOTAConfig
-from .hota_errors import MissingVideoIDError, DuplicateIDError, InvalidSimilarityMetricError, UnsupportedBoxFormatError
-from .constants import AnnotationColumn, BOX_FORMAT
+from .constants import BOX_FORMAT, AnnotationColumn
+from .cost_matrix import CostMatrixData, CostMatrixDataFrame
+from .hota_data import FrameExtractionInputData, HOTAData, VideoFrameData
+from .hota_errors import DuplicateIDError, InvalidSimilarityMetricError
+from .jaccard import (
+    jaccard_cost_matrices,
+    normalize_cost_matrix,
+    process_jaccard_cost_matrix_chunk,
+)
+from .similarity import (
+    ECEF_L2_DECAY_METERS,
+    calculate_box_ious,
+    calculate_latlon_l2,
+    calculate_latlonalt_l2,
+)
 
-def merge_hota_data(hota_data_list: List[HOTAData], config: Optional[HOTAConfig] = None) -> HOTAData:
+# Re-exports for backward compatibility — existing test code and downstream
+# users import these names from this module.
+__all__ = [
+    "ECEF_L2_DECAY_METERS",
+    "build_HOTA_objects",
+    "build_HOTA_objects_worker",
+    "calculate_box_ious",
+    "calculate_latlon_l2",
+    "calculate_latlonalt_l2",
+    "compute_cost_per_video_per_frame",
+    "compute_id_alignment_similarity",
+    "compute_id_alignment_similarity_from_df",
+    "jaccard_cost_matrices",
+    "merge_hota_data",
+    "normalize_cost_matrix",
+    "process_jaccard_cost_matrix_chunk",
+]
+
+
+# ---------------------------------------------------------------------------
+# Stage 4 helpers — HOTAData merging
+# ---------------------------------------------------------------------------
+
+def merge_hota_data(hota_data_list: list[HOTAData], config: HOTAConfig | None = None) -> HOTAData:
     """
-    Merge a list of HOTA data objects into a single aggregated object.
+    Merge a list of HOTAData objects into a single aggregated object.
 
     The merged object's video_id is set to the shared video_id when all inputs
     agree (per-frame → per-video merge), or None when they differ (per-video →
@@ -38,9 +74,6 @@ def merge_hota_data(hota_data_list: List[HOTAData], config: Optional[HOTAConfig]
             hota_data_list[0]. Default-None preserves prior behavior for callers
             that haven't been updated.
 
-    Returns:
-        Single merged HOTAData object
-
     Raises:
         MissingVideoIDError: If any item at index 1+ has video_id=None
     """
@@ -48,17 +81,16 @@ def merge_hota_data(hota_data_list: List[HOTAData], config: Optional[HOTAConfig]
         # Empty placeholder must honor caller's iou_thresholds shape, otherwise
         # downstream aggregation (which assumes consistent shapes) breaks silently.
         return HOTAData(config=config)
-    # composite together the HOTA_DATAs into a single HOTA_DATA
+
     global_hota_data = copy.deepcopy(hota_data_list[0])
     global_hota_data.frame = None
 
     first_video_id = hota_data_list[0].video_id
     all_same_video_id = True
 
-    # iterate through the list of HOTA_DATAs and add them together, starting at 1
-    # we already have the first HOTA_DATA in global_hota_data
     for dat in hota_data_list[1:]:
         if dat.video_id is None:
+            from .hota_errors import MissingVideoIDError
             raise MissingVideoIDError()
         if dat.video_id != first_video_id:
             all_same_video_id = False
@@ -69,54 +101,55 @@ def merge_hota_data(hota_data_list: List[HOTAData], config: Optional[HOTAConfig]
     return global_hota_data
 
 
-def compute_id_alignment_similarity_from_df(input_dat: FrameExtractionInputData, similarity_metric: str = 'iou') -> tuple[str, list[CostMatrixDataFrame]]:
-    """
-    Compute alignment costs between reference and comparison frames.
-    """
+# ---------------------------------------------------------------------------
+# Stage 1 — per-frame similarity computation + in-frame dedup
+# ---------------------------------------------------------------------------
+
+def compute_id_alignment_similarity_from_df(
+    input_dat: FrameExtractionInputData,
+    similarity_metric: str = 'iou',
+) -> tuple[str, list[CostMatrixDataFrame]]:
+    """Group ref/comp DataFrames by frame and emit one cost matrix per frame."""
     ref_df = input_dat.ref_df
     comp_df = input_dat.comp_df
 
     cols = ref_df.columns.tolist()
-    
-    # Group by frame
-    # return pd.api.typing.DataFrameGroupBy
+
     ref_frames_df = ref_df.groupby(AnnotationColumn.FRAME)
     comp_frames_df = comp_df.groupby(AnnotationColumn.FRAME)
 
-    k1 = set(ref_frames_df.groups.keys())
-    k2 = set(comp_frames_df.groups.keys())
-    shared_unique_frames = list(k1 | k2)  # union of keys
-    shared_unique_frames.sort()
+    shared_unique_frames = sorted(set(ref_frames_df.groups) | set(comp_frames_df.groups))
 
-    cm_list = list()
+    cm_list = []
     for frame in shared_unique_frames:
-        if frame in ref_frames_df.groups:
-            ref_frame_df = ref_frames_df.get_group(frame)
-        else:
-            ref_frame_df = pd.DataFrame(columns=cols)
-        if frame in comp_frames_df.groups:
-            comp_frame_df = comp_frames_df.get_group(frame)
-        else:
-            comp_frame_df = pd.DataFrame(columns=cols)
+        ref_frame_df = ref_frames_df.get_group(frame) if frame in ref_frames_df.groups else pd.DataFrame(columns=cols)
+        comp_frame_df = comp_frames_df.get_group(frame) if frame in comp_frames_df.groups else pd.DataFrame(columns=cols)
 
-        # package into dataclass, adding class information
         dat = VideoFrameData(ref_frame_df.values, comp_frame_df.values, input_dat.video_id, int(frame), cols)
-        cm = compute_id_alignment_similarity(dat, similarity_metric)
-        cm_list.append(cm)
+        cm_list.append(compute_id_alignment_similarity(dat, similarity_metric))
     return input_dat.video_id, cm_list
 
 
-def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str = 'iou') -> CostMatrixDataFrame:
+def compute_id_alignment_similarity(
+    dat: VideoFrameData,
+    similarity_metric: str = 'iou',
+) -> CostMatrixDataFrame:
     """
-    Compute alignment costs between reference and comparison frames.
-    """
+    Compute one frame's similarity matrix and dedupe duplicate comp ids via Jaccard.
 
+    The dedupe step here mirrors the cross-frame Jaccard in ``jaccard.py``: when
+    a comp id appears N times in the frame, the N columns collapse into one
+    using ``sum / (1 + N - sum)`` so duplicate detections don't artificially
+    inflate per-frame similarity.
+    """
     f_idx = dat.col_names.index(AnnotationColumn.FRAME)
     id_idx = dat.col_names.index(AnnotationColumn.OBJECT_ID)
     hash_idx = dat.col_names.index(AnnotationColumn.BOX_HASH) if AnnotationColumn.BOX_HASH in dat.col_names else None
-    # Quick validation using values access
+
     ref_frames = np.unique(dat.ref_np[:, f_idx])
     comp_frames = np.unique(dat.comp_np[:, f_idx])
+    # If either side has no detections this frame, return a degenerate zero matrix
+    # so downstream code doesn't branch on emptiness.
     if len(comp_frames) == 0 or len(ref_frames) == 0:
         ref_ids = dat.ref_np[:, id_idx]
         comp_ids = dat.comp_np[:, id_idx]
@@ -127,23 +160,24 @@ def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str 
             ref_hashes = None
             comp_hashes = None
         cost_matrix = np.zeros((len(ref_ids), len(comp_ids)))
-        return CostMatrixDataFrame(i_ids=ref_ids, j_ids=comp_ids, i_hashes=ref_hashes, j_hashes=comp_hashes, cost_matrix=cost_matrix, video_id=dat.video_id, frame=dat.frame)
+        return CostMatrixDataFrame(
+            i_ids=ref_ids, j_ids=comp_ids, i_hashes=ref_hashes, j_hashes=comp_hashes,
+            cost_matrix=cost_matrix, video_id=dat.video_id, frame=dat.frame,
+        )
     assert len(ref_frames) == 1 and len(comp_frames) == 1
     assert ref_frames[0] == comp_frames[0]
 
-    # This is reference data, it should never happen, but ... you never know
-    # Check for duplicate IDs in reference data
+    # Reference must have unique ids per frame — caller bug if not.
     ref_ids_t = dat.ref_np[:, id_idx]
     unique_ref_ids, ref_counts = np.unique(ref_ids_t, return_counts=True)
     if np.max(ref_counts) > 1:
         duplicate_ids = unique_ref_ids[ref_counts > 1]
         raise DuplicateIDError(True, dat.video_id, dat.frame, duplicate_ids)
 
-    # Discover any duplicate IDs in comparison data
+    # Comp may have duplicate ids legitimately (e.g. multi-camera trackers); deduped below.
     comp_ids_t = dat.comp_np[:, id_idx]
     unique_comp_ids, comp_counts = np.unique(comp_ids_t, return_counts=True)
 
-    # Get unique IDs once
     ref_ids = dat.ref_np[:, id_idx]
     comp_ids = dat.comp_np[:, id_idx]
     if hash_idx is not None:
@@ -154,23 +188,14 @@ def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str 
         comp_hashes = None
 
     if similarity_metric == 'iou':
-        # Direct numpy array creation for bounding boxes
         box_idx = [
             dat.col_names.index(col)
-            for col in [
-                AnnotationColumn.X1,
-                AnnotationColumn.Y1,
-                AnnotationColumn.X2,
-                AnnotationColumn.Y2
-            ]
+            for col in [AnnotationColumn.X1, AnnotationColumn.Y1, AnnotationColumn.X2, AnnotationColumn.Y2]
         ]
         bb1 = dat.ref_np[:, box_idx].astype(float)
         bb2 = dat.comp_np[:, box_idx].astype(float)
-
-        # Create cost matrix and compute IOUs
         cost_matrix = calculate_box_ious(bb1, bb2, box_format=BOX_FORMAT)
     elif similarity_metric == 'latlonalt':
-        # Create cost matrix and compute lat/lon distance
         box_idx = [
             dat.col_names.index(col)
             for col in [AnnotationColumn.LAT, AnnotationColumn.LON, AnnotationColumn.ALT]
@@ -179,41 +204,27 @@ def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str 
         bb2 = dat.comp_np[:, box_idx].astype(float)
         cost_matrix = calculate_latlonalt_l2(bb1, bb2)
     elif similarity_metric == 'latlon':
-        # Create cost matrix and compute lat/lon distance
         box_idx = [dat.col_names.index(col) for col in [AnnotationColumn.LAT, AnnotationColumn.LON]]
         bb1 = dat.ref_np[:, box_idx].astype(float)
         bb2 = dat.comp_np[:, box_idx].astype(float)
         cost_matrix = calculate_latlon_l2(bb1, bb2)
     else:
         raise InvalidSimilarityMetricError(similarity_metric)
-    
 
+    # In-frame Jaccard dedup for duplicate comp ids.
     duplicate_comp_ids = unique_comp_ids[comp_counts > 1]
     cols_to_delete = []
     for c_id in duplicate_comp_ids:
         mask = np.where(comp_ids_t == c_id)[0]
         sub_cost_matrix = cost_matrix[:, mask]
-        
-        # Use Jaccard similarity instead of averaging
-        # Apply the same Jaccard formula as in jaccard_cost_matrices function
-        # but for merging duplicate columns within a single matrix
-        
-        # Sum the cost values (intersection)
+
         cost_sum = np.sum(sub_cost_matrix, axis=1)
-        
-        # For Jaccard: each reference ID appears once, each duplicate comp ID appears once
-        # So the counts are: ref_count = 1, comp_count = len(mask)
         ref_count = 1
         comp_count = len(mask)
-        
-        # Apply Jaccard formula: sum / (ref_count + comp_count - sum)
-        # This is the same formula used in jaccard_cost_matrices
+
         jaccard_values = cost_sum / (ref_count + comp_count - cost_sum)
-        
-        # Handle potential division by zero (though unlikely in practice)
         jaccard_values = np.where(np.isfinite(jaccard_values), jaccard_values, 0.0)
-        # avg_values = np.mean(cost_matrix[:, mask], axis=1)
-        
+
         cost_matrix[:, mask[0]] = jaccard_values
         cols_to_delete.extend(mask[1:])
 
@@ -223,315 +234,101 @@ def compute_id_alignment_similarity(dat: VideoFrameData, similarity_metric: str 
         if comp_hashes is not None:
             comp_hashes = np.delete(comp_hashes, cols_to_delete)
 
-    return CostMatrixDataFrame(i_ids=ref_ids, j_ids=comp_ids, i_hashes=ref_hashes, j_hashes=comp_hashes, cost_matrix=cost_matrix, video_id=dat.video_id, frame=dat.frame)
+    return CostMatrixDataFrame(
+        i_ids=ref_ids, j_ids=comp_ids, i_hashes=ref_hashes, j_hashes=comp_hashes,
+        cost_matrix=cost_matrix, video_id=dat.video_id, frame=dat.frame,
+    )
 
 
-def build_HOTA_objects_worker(sim_cost_matrix_list: list[CostMatrixData], gt_to_tracker_id_map: dict[int, int], config: HOTAConfig) -> list[HOTAData]:
-    # if gt_to_tracker_id_map is None, then we use per-frame id alignment
-    dat_list = [HOTAData(sim_cost_matrix, gt_to_tracker_id_map, config) for sim_cost_matrix in sim_cost_matrix_list]
-    return dat_list
-
-
-def build_HOTA_objects(id_similarity_per_video, config: HOTAConfig, per_video_cost_matrices: list[CostMatrixData], global_cost_matrix: CostMatrixData, n_workers: int = 1):
-    # Create a list of (video_id, frames) tuples to process
-    video_chunks = list(id_similarity_per_video.values())
-
-    video_ids = list(id_similarity_per_video.keys())
-
-    if n_workers > 1:
-        # Process all videos in parallel - one chunk per video
-        with Pool(processes=n_workers) as pool:
-
-            # Process each video in parallel
-            if config.id_alignment_method == 'per_video':
-                # use the per-video id alignment cost matrix instead of the global one
-                video_results = pool.starmap(build_HOTA_objects_worker, [(chunk, per_video_cost_matrices[vid].ref2comp_id_map, config) for vid, chunk in zip(video_ids, video_chunks)])
-            elif config.id_alignment_method == 'per_frame':
-                video_results = pool.starmap(build_HOTA_objects_worker, [(chunk, None, config) for chunk in video_chunks])
-            else:
-                video_results = pool.starmap(build_HOTA_objects_worker, [(chunk, global_cost_matrix.ref2comp_id_map, config) for chunk in video_chunks])
-
-    else:
-        video_results = []
-        for video_id, cm_values in id_similarity_per_video.items():
-            # Process frames for this video sequentially
-            if config.id_alignment_method == 'per_video':
-                frame_dat = build_HOTA_objects_worker(cm_values, per_video_cost_matrices[video_id].ref2comp_id_map, config)
-            elif config.id_alignment_method == 'per_frame':
-                frame_dat = build_HOTA_objects_worker(cm_values, None, config)
-            else:
-                frame_dat = build_HOTA_objects_worker(cm_values, global_cost_matrix.ref2comp_id_map, config)
-            video_results.append(frame_dat)
-
-    # Organize results into per-video structure using video_ids from the dict keys
-    per_frame_hota_data = {vid: res for vid, res in zip(video_ids, video_results)}
-
-    def _empty_hota_data(vid: str, config: HOTAConfig) -> HOTAData:
-        d = HOTAData(config=config)
-        d.video_id = vid  # preserve video id in empty config, so that this empty video contributes nothing to score, but still exists.
-        return d
-
-    per_video_hota_data = {vid: merge_hota_data(res) if res else _empty_hota_data(vid, config) for vid, res in zip(video_ids, video_results)}
-    return per_video_hota_data, per_frame_hota_data
-
-
-def compute_cost_per_video_per_frame(ref_dfs: dict[str, pd.DataFrame], comp_dfs: dict[str, pd.DataFrame], n_workers:int=0, similarity_metric: str = 'iou') -> dict[str, list[CostMatrixDataFrame]]:
-
-    # ************************************
-    # Convert the list[pd.DataFrame] into a list[CostMatrixData]
-    # ************************************
-    frame_extraction_work_queue = [FrameExtractionInputData(ref_dfs[video_id], comp_dfs[video_id], video_id) for video_id in ref_dfs.keys()]
-    id_similarity_per_video = dict()
+def compute_cost_per_video_per_frame(
+    ref_dfs: dict[str, pd.DataFrame],
+    comp_dfs: dict[str, pd.DataFrame],
+    n_workers: int = 0,
+    similarity_metric: str = 'iou',
+) -> dict[str, list[CostMatrixDataFrame]]:
+    """Stage 1: build ``{video_id: [per-frame CostMatrixDataFrame, ...]}``."""
+    frame_extraction_work_queue = [
+        FrameExtractionInputData(ref_dfs[video_id], comp_dfs[video_id], video_id)
+        for video_id in ref_dfs.keys()
+    ]
     if n_workers > 1:
         with Pool(processes=n_workers) as pool:
-            results = pool.starmap(compute_id_alignment_similarity_from_df, [(dat, similarity_metric) for dat in frame_extraction_work_queue])
+            results = pool.starmap(
+                compute_id_alignment_similarity_from_df,
+                [(dat, similarity_metric) for dat in frame_extraction_work_queue],
+            )
     else:
         results = [compute_id_alignment_similarity_from_df(dat, similarity_metric) for dat in frame_extraction_work_queue]
 
-    for video_id, result in results:
-        id_similarity_per_video[video_id] = result
-
-    return id_similarity_per_video
+    return {video_id: result for video_id, result in results}
 
 
-def process_jaccard_cost_matrix_chunk(video_id: str, matrices_chunk: list[CostMatrixData]) -> tuple:
-    """Process a chunk of cost matrices and return intermediate calculations."""
-    if not matrices_chunk:
-        return video_id, np.array([]), np.array([]), np.array([]), np.array([]), np.zeros((0, 0), dtype=np.float64)
-        
+# ---------------------------------------------------------------------------
+# Stage 4 — HOTA object construction
+# ---------------------------------------------------------------------------
 
-    # Get unique IDs in this chunk
-    chunk_i_ids = np.unique(np.concatenate([data.i_ids for data in matrices_chunk]))
-    chunk_j_ids = np.unique(np.concatenate([data.j_ids for data in matrices_chunk]))
-    
-    # Create lookups within this chunk
-    chunk_i_lookup = {id_val: idx for idx, id_val in enumerate(chunk_i_ids)}
-    chunk_j_lookup = {id_val: idx for idx, id_val in enumerate(chunk_j_ids)}
-    
-    # Initialize matrices for this chunk
-    shape = (len(chunk_i_ids), len(chunk_j_ids))
-    chunk_i_counts = np.zeros(shape[0])
-    chunk_j_counts = np.zeros(shape[1])
-    chunk_cost_sum = np.zeros(shape, dtype=np.float64)
-    
-    # Process each matrix in the chunk
-    for data in matrices_chunk:
-        i_idx = np.fromiter((chunk_i_lookup[id_] for id_ in data.i_ids), dtype=int)
-        j_idx = np.fromiter((chunk_j_lookup[id_] for id_ in data.j_ids), dtype=int)
-
-        chunk_i_counts[i_idx] += 1
-        chunk_j_counts[j_idx] += 1
-
-        if len(i_idx) > 0 and len(j_idx) > 0:
-            cm = normalize_cost_matrix(data.cost_matrix)
-            chunk_cost_sum[i_idx[:, np.newaxis], j_idx[np.newaxis, :]] += cm
-    
-    return video_id, chunk_i_ids, chunk_j_ids, chunk_i_counts, chunk_j_counts, chunk_cost_sum
+def build_HOTA_objects_worker(
+    sim_cost_matrix_list: list[CostMatrixData],
+    gt_to_tracker_id_map: dict[int, int] | None,
+    config: HOTAConfig,
+) -> list[HOTAData]:
+    """Build per-frame HOTAData for one video. None map ⇒ per-frame id alignment."""
+    return [HOTAData(sim_cost_matrix, gt_to_tracker_id_map, config) for sim_cost_matrix in sim_cost_matrix_list]
 
 
-def jaccard_cost_matrices(matrices_dict: dict[str, list[CostMatrixData]], return_per_key:bool = False, n_workers: int = 1) -> CostMatrixData:
-    if not matrices_dict:
-        raise ValueError("dict[str, list[CostMatrixData]] is empty")
-    
-    # Single chunk case - use original implementation
-    if n_workers <= 1:
-        results = [process_jaccard_cost_matrix_chunk(video_id, chunk) for video_id, chunk in matrices_dict.items()]
-    else:
-        # Process chunks in parallel
+def _id_map_for(
+    video_id: str,
+    config: HOTAConfig,
+    per_video_cost_matrices: dict[str, CostMatrixData] | None,
+    global_cost_matrix: CostMatrixData | None,
+) -> dict[int, int] | None:
+    """Pick the GT→tracker id map to hand to ``build_HOTA_objects_worker``."""
+    if config.id_alignment_method == 'per_video':
+        return per_video_cost_matrices[video_id].ref2comp_id_map
+    if config.id_alignment_method == 'per_frame':
+        return None
+    return global_cost_matrix.ref2comp_id_map
+
+
+def build_HOTA_objects(
+    id_similarity_per_video: dict[str, list[CostMatrixDataFrame]],
+    config: HOTAConfig,
+    per_video_cost_matrices: dict[str, CostMatrixData] | None,
+    global_cost_matrix: CostMatrixData | None,
+    n_workers: int = 1,
+):
+    """Stage 4: emit per-video and per-frame HOTAData using the chosen id map."""
+    video_ids = list(id_similarity_per_video.keys())
+    video_chunks = list(id_similarity_per_video.values())
+
+    if n_workers > 1:
         with Pool(processes=n_workers) as pool:
-            results = pool.starmap(process_jaccard_cost_matrix_chunk, matrices_dict.items())
-        
-    if return_per_key:
-        cost_matricies = dict()
-        for video_id, i_ids, j_ids, i_counts, j_counts, cost_sum in results:
-            # Apply Jaccard formula
-            cost_matrix = cost_sum / (i_counts[:, np.newaxis] + j_counts[np.newaxis, :] - cost_sum)
-            cost_matrix = CostMatrixData(i_ids=i_ids, j_ids=j_ids, cost_matrix=cost_matrix, video_id=None, frame=None)
-            cost_matricies[video_id] = cost_matrix
-        return cost_matricies
-
+            video_results = pool.starmap(
+                build_HOTA_objects_worker,
+                [
+                    (chunk, _id_map_for(vid, config, per_video_cost_matrices, global_cost_matrix), config)
+                    for vid, chunk in zip(video_ids, video_chunks, strict=False)
+                ],
+            )
     else:
-        # Collect all unique IDs
-        # video_id, chunk_i_ids, chunk_j_ids, chunk_i_counts, chunk_j_counts, chunk_cost_sum
-        all_i_ids = np.unique(np.concatenate([res[1] for res in results]))
-        all_j_ids = np.unique(np.concatenate([res[2] for res in results]))
-        
-        # Create global lookups
-        ref_lookup = {id_val: idx for idx, id_val in enumerate(all_i_ids)}
-        comp_lookup = {id_val: idx for idx, id_val in enumerate(all_j_ids)}
-        
-        # Initialize global matrices
-        shape = (len(all_i_ids), len(all_j_ids))
-        i_counts = np.zeros(shape[0])
-        j_counts = np.zeros(shape[1])
-        cost_sum = np.zeros(shape, dtype=np.float64)
-        
-        # Combine chunk results
-        for _, chunk_i_ids, chunk_j_ids, chunk_i_counts, chunk_j_counts, chunk_cost_sum in results:
+        video_results = [
+            build_HOTA_objects_worker(
+                chunk,
+                _id_map_for(vid, config, per_video_cost_matrices, global_cost_matrix),
+                config,
+            )
+            for vid, chunk in zip(video_ids, video_chunks, strict=False)
+        ]
 
-            # Map chunk indices to global indices
-            i_global_idx = np.fromiter((ref_lookup[id_] for id_ in chunk_i_ids), dtype=int)
-            j_global_idx = np.fromiter((comp_lookup[id_] for id_ in chunk_j_ids), dtype=int)
-            
-            # Update global counts and sum
-            for local_idx, global_idx in enumerate(i_global_idx):
-                i_counts[global_idx] += chunk_i_counts[local_idx]
-                
-            for local_idx, global_idx in enumerate(j_global_idx):
-                j_counts[global_idx] += chunk_j_counts[local_idx]
-            
-            # Add cost sums from chunk to global matrix
-            for i_local, i_global in enumerate(i_global_idx):
-                for j_local, j_global in enumerate(j_global_idx):
-                    cost_sum[i_global, j_global] += chunk_cost_sum[i_local, j_local]
-        
-        # Apply Jaccard formula
-        cost_matrix = cost_sum / (i_counts[:, np.newaxis] + j_counts[np.newaxis, :] - cost_sum)
-        
-        return {'global': CostMatrixData(i_ids=all_i_ids, j_ids=all_j_ids, cost_matrix=cost_matrix, video_id=None, frame=None)}
-        
+    per_frame_hota_data = {vid: res for vid, res in zip(video_ids, video_results, strict=False)}
 
+    def _empty_hota_data(vid: str, cfg: HOTAConfig) -> HOTAData:
+        d = HOTAData(config=cfg)
+        d.video_id = vid  # preserve key so empty videos still appear in the output dict
+        return d
 
-def calculate_box_ious(bboxes1: np.ndarray, bboxes2: np.ndarray, box_format='xywh'):
-    """
-    Calculates the IOU (intersection over union) between two arrays of boxes using vectorized operations.
-
-    Args:
-        bboxes1: Array of shape (N, 4) containing first set of bounding boxes
-        bboxes2: Array of shape (M, 4) containing second set of bounding boxes
-        box_format: Format of input boxes - either 'xywh' (x, y, width, height) or
-                   'x0y0x1y1' (x_min, y_min, x_max, y_max) (alias 'xyxy')
-        
-    Returns:
-        Array of shape (N, M) containing pairwise IOU values
-    """
-    if len(bboxes1) == 0 or len(bboxes2) == 0:
-        return np.zeros((len(bboxes1), len(bboxes2)))
-    
-    # Convert to x0y0x1y1 format if needed - avoid unnecessary operations
-    if box_format == 'xywh':
-        boxes1 = np.column_stack([
-            bboxes1[:, 0], bboxes1[:, 1], 
-            bboxes1[:, 0] + bboxes1[:, 2], bboxes1[:, 1] + bboxes1[:, 3]
-        ])
-        boxes2 = np.column_stack([
-            bboxes2[:, 0], bboxes2[:, 1], 
-            bboxes2[:, 0] + bboxes2[:, 2], bboxes2[:, 1] + bboxes2[:, 3]
-        ])
-    elif box_format in ('x0y0x1y1', 'xyxy'):
-        # Use direct references instead of copying
-        boxes1, boxes2 = bboxes1, bboxes2
-    else:
-        raise UnsupportedBoxFormatError(box_format)
-
-    # Pre-compute box areas once
-    boxes1_area = (boxes1[:, 2] - boxes1[:, 0]) * (boxes1[:, 3] - boxes1[:, 1])
-    boxes2_area = (boxes2[:, 2] - boxes2[:, 0]) * (boxes2[:, 3] - boxes2[:, 1])
-
-    # Compute intersection coordinates efficiently
-    # Use min/max operations on specific axes for better performance
-    left = np.maximum(boxes1[:, None, 0], boxes2[None, :, 0])
-    top = np.maximum(boxes1[:, None, 1], boxes2[None, :, 1])
-    right = np.minimum(boxes1[:, None, 2], boxes2[None, :, 2])
-    bottom = np.minimum(boxes1[:, None, 3], boxes2[None, :, 3])
-
-    # Calculate intersection area - avoid creating temporary arrays
-    width = np.maximum(0, right - left)
-    height = np.maximum(0, bottom - top)
-    intersection = width * height
-
-    # Calculate union directly
-    union = boxes1_area[:, None] + boxes2_area[None, :] - intersection
-
-    # Constant for numerical stability - single definition
-    epsilon = 1e-8
-
-    # Compute IOUs
-    ious = np.divide(intersection, np.maximum(union, epsilon))
-
-    return ious
-
-
-def _latlon_to_ecef(latlonalt: np.ndarray) -> np.ndarray:
-    """
-    Convert geographic coordinates to ECEF (Earth-Centered, Earth-Fixed) meters.
-
-    Args:
-        latlonalt: Array of shape (N, 2) or (N, 3) with columns [lat_deg, lon_deg, alt_m].
-                   Altitude defaults to 0 when not provided.
-
-    Returns:
-        Array of shape (N, 3) with columns [x, y, z] in meters.
-    """
-    alt = latlonalt[:, 2] if latlonalt.shape[1] >= 3 else np.zeros(len(latlonalt))
-    x, y, z = _WGS84_TO_ECEF.transform(latlonalt[:, 0], latlonalt[:, 1], alt)
-    return np.column_stack([x, y, z])
-
-
-def calculate_latlonalt_l2(latlonalt1: np.ndarray, latlonalt2: np.ndarray):
-    """
-    Calculates pairwise L2 distance in meters between 3D geographic points.
-
-    Inputs are reprojected to ECEF (Earth-Centered, Earth-Fixed) so that all
-    three axes are in meters before computing the Euclidean distance.
-
-    Args:
-        latlonalt1: Array of shape (N, 3) containing [lat_deg, lon_deg, alt_m]
-        latlonalt2: Array of shape (M, 3) containing [lat_deg, lon_deg, alt_m]
-
-    Returns:
-        Array of shape (N, M) containing pairwise similarity scores in [0, 1]
-    """
-    ecef1 = _latlon_to_ecef(latlonalt1)  # (N, 3) meters
-    ecef2 = _latlon_to_ecef(latlonalt2)  # (M, 3) meters
-    diff = ecef1[:, np.newaxis, :] - ecef2[np.newaxis, :, :]
-    distances = np.sqrt(np.sum(diff ** 2, axis=2))
-    return np.exp(-distances / ECEF_L2_DECAY_METERS)
-
-
-def calculate_latlon_l2(latlon1: np.ndarray, latlon2: np.ndarray):
-    """
-    Calculates pairwise L2 distance in meters between 2D geographic points.
-
-    Inputs are reprojected to ECEF (Earth-Centered, Earth-Fixed) at altitude 0
-    so that both axes are in meters before computing the Euclidean distance.
-
-    Args:
-        latlon1: Array of shape (N, 2) containing [lat_deg, lon_deg]
-        latlon2: Array of shape (M, 2) containing [lat_deg, lon_deg]
-
-    Returns:
-        Array of shape (N, M) containing pairwise similarity scores in [0, 1]
-    """
-    ecef1 = _latlon_to_ecef(latlon1)  # (N, 3) meters, alt=0
-    ecef2 = _latlon_to_ecef(latlon2)  # (M, 3) meters, alt=0
-    diff = ecef1[:, np.newaxis, :] - ecef2[np.newaxis, :, :]
-    distances = np.sqrt(np.sum(diff ** 2, axis=2))
-    return np.exp(-distances / ECEF_L2_DECAY_METERS)
-
-
-
-def normalize_cost_matrix(cost_matrix: np.ndarray) -> np.ndarray:
-    epsilon = 1e-8
-
-    if np.size(cost_matrix) == 1:
-        # Design decision: skip normalization for 1x1 matrices. Normalizing would
-        # collapse any non-zero value to 1.0, destroying magnitude information needed
-        # to compare independent 1x1 frames against each other. This path is hit
-        # frequently (thousands of times per evaluation) and similarity metrics like
-        # lat/lon are not bounded to [0, 1], so the raw value must be preserved.
-        return cost_matrix
-
-    # Compute row and column sums once
-    row_sums = np.sum(cost_matrix, axis=1, keepdims=True)
-    col_sums = np.sum(cost_matrix, axis=0, keepdims=True)
-
-    # Calculate denominator and normalize in one step where possible
-    denom = row_sums + col_sums - cost_matrix
-    # Avoid division by zero by using np.divide with where
-    cost_matrix = np.divide(cost_matrix, denom, where=denom > epsilon, out=np.zeros_like(cost_matrix))
-
-    return cost_matrix
-
-
-
+    per_video_hota_data = {
+        vid: merge_hota_data(res) if res else _empty_hota_data(vid, config)
+        for vid, res in zip(video_ids, video_results, strict=False)
+    }
+    return per_video_hota_data, per_frame_hota_data
