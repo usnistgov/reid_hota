@@ -10,13 +10,17 @@ from .hota_errors import (
 )
 
 
-@dataclass
+@dataclass(frozen=True, eq=False)
 class HOTAConfig:
     """
     Configuration for HOTA calculation.
-    
+
     This class defines all parameters needed for computing HOTA metrics,
     including alignment methods, similarity metrics, and filtering options.
+
+    Immutability: the dataclass is frozen and `iou_thresholds` is locked to
+    read-only in __post_init__. Construct a new HOTAConfig if you need to
+    change a value.
     """
     
     class_ids: Optional[List[int]] = None
@@ -52,6 +56,12 @@ class HOTAConfig:
 
     suppress_print_statements: bool = False
     """Whether to suppress print statements. This is useful for running the evaluator within a larger context."""
+
+    def __post_init__(self) -> None:
+        # Lock the iou_thresholds array contents (frozen=True only freezes the
+        # binding; without this, `cfg.iou_thresholds[0] = 99` would still work).
+        if isinstance(self.iou_thresholds, np.ndarray):
+            self.iou_thresholds.setflags(write=False)
 
     def validate(self) -> None:
         """Validate configuration parameters."""

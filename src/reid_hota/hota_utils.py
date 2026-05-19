@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import copy
 from multiprocessing import Pool
-from typing import List
+from typing import List, Optional
 from pyproj import Transformer
 
 # WGS84 geographic (lat, lon, alt) → WGS84 geocentric Cartesian (ECEF x, y, z), all in meters
@@ -21,21 +21,28 @@ from .config import HOTAConfig
 from .hota_errors import MissingVideoIDError, DuplicateIDError, InvalidSimilarityMetricError, UnsupportedBoxFormatError
 from .constants import AnnotationColumn, BOX_FORMAT
 
-def merge_hota_data(hota_data_list: List[HOTAData]) -> HOTAData:
+def merge_hota_data(hota_data_list: List[HOTAData], config: Optional[HOTAConfig] = None) -> HOTAData:
     """
     Merge a list of HOTA data objects into a single aggregated object.
-    
+
     Args:
         hota_data_list: List of HOTAData objects to merge
-        
+        config: Optional HOTAConfig used only to shape the empty-list placeholder
+            (so its iou_thresholds match the caller's). Ignored when the list is
+            non-empty — in that case the merged object inherits its shape from
+            hota_data_list[0]. Default-None preserves prior behavior for callers
+            that haven't been updated.
+
     Returns:
         Single merged HOTAData object
-        
+
     Raises:
         ValueError: If any video_id is None
     """
     if len(hota_data_list) == 0:
-        return HOTAData() ## create empty placeholder
+        # Empty placeholder must honor caller's iou_thresholds shape, otherwise
+        # downstream aggregation (which assumes consistent shapes) breaks silently.
+        return HOTAData(config=config)
     # composite together the HOTA_DATAs into a single HOTA_DATA
     global_hota_data = copy.deepcopy(hota_data_list[0])
     global_hota_data.frame = None

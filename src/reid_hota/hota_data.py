@@ -66,17 +66,19 @@ class HOTAData:
     def __init__(self,
                  sim_cost_matrix: Optional[CostMatrixData] = None,
                  gt_to_tracker_id_map: Optional[dict[np.dtype[np.object_], np.dtype[np.object_]]] = None,
-                 config: HOTAConfig = HOTAConfig()):
+                 config: Optional[HOTAConfig] = None):
         """
         Initialize HOTAData instance.
-        
+
         Args:
             sim_cost_matrix: The cost matrix for this frame.
             gt_to_tracker_id_map: A map from ground truth ids to tracker ids.
-            iou_thresholds: Set of IoU thresholds to compute metrics for.
-            reference_contains_dense_annotations: Whether to the reference data contains dense annotations. If False, non-matched comparison ids are not counted towards the FP count. In other words, only those comparison global ids which have a match in the reference data count as normal FP. The non-matching comparison ids are counted in an UnmatchedFP field in the HOTA data.
-            gids: The ground truth ids to use for the HOTA metric. If provided, all other ids are ignored.
+            config: HOTAConfig governing thresholds, dense-annotation handling, and gid
+                filtering. When None, a fresh default-valued HOTAConfig is constructed
+                per instance (avoids the mutable-default-argument trap).
         """
+        if config is None:
+            config = HOTAConfig()
 
         self.reference_contains_dense_annotations = config.reference_contains_dense_annotations
         self.iou_thresholds = np.asarray(config.iou_thresholds)

@@ -2,6 +2,7 @@ import os
 import pandas as pd
 import time
 import warnings
+from typing import Optional
 
 from .hota_utils import compute_cost_per_video_per_frame, jaccard_cost_matrices, build_HOTA_objects, merge_hota_data
 from .config import HOTAConfig
@@ -30,16 +31,18 @@ class HOTAReIDEvaluator:
         AnnotationColumn.BOX_HASH,
     ]
 
-    def __init__(self, n_workers: int = 0, config: HOTAConfig = HOTAConfig()):
+    def __init__(self, n_workers: int = 0, config: Optional[HOTAConfig] = None):
         """
         Initialize the HOTAReIDEvaluator
 
         Args:
-            n_workers: Number of workers to use for parallel processing. 
-            config: HOTAConfig object defining how the metric should be computed
+            n_workers: Number of workers to use for parallel processing.
+            config: HOTAConfig object defining how the metric should be computed.
+                    When None, a fresh default-valued HOTAConfig is constructed
+                    per evaluator (avoids the mutable-default-argument trap).
         """
         self.n_workers = n_workers
-        self.config = config
+        self.config = config if config is not None else HOTAConfig()
         self.config.validate()
        
         self.required_cols = self._determine_required_columns()
@@ -201,7 +204,7 @@ class HOTAReIDEvaluator:
         st = time.time()
         if not self.config.suppress_print_statements:
             print(f"Merging HOTA data")
-        self.global_hota_data = merge_hota_data(list(self.per_video_hota_data.values()))
+        self.global_hota_data = merge_hota_data(list(self.per_video_hota_data.values()), config=self.config)
         self.global_hota_data.video_id = None  # remove the video_id from the global HOTA_DATA object
         if not self.config.suppress_print_statements:
             print(f"  took: {time.time() - st} seconds")
