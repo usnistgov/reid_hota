@@ -118,12 +118,12 @@ def tracking_data() -> tuple[dict[str, pd.DataFrame], dict[str, pd.DataFrame]]:
     print("Class IDs in comparison data:", sorted(list(comp_class_ids)))
 
     
-    if frame_counts:
-        print(f"Frame count statistics:")
-        print(f"  Min frames: {min(frame_counts)}")
-        print(f"  Max frames: {max(frame_counts)}")
-        print(f"  Mean frames: {sum(frame_counts)/len(frame_counts):.2f}")
-        print(f"  total frames: {sum(frame_counts)}")
+    # if frame_counts:
+    #     print(f"Frame count statistics:")
+    #     print(f"  Min frames: {min(frame_counts)}")
+    #     print(f"  Max frames: {max(frame_counts)}")
+    #     print(f"  Mean frames: {sum(frame_counts)/len(frame_counts):.2f}")
+    #     print(f"  total frames: {sum(frame_counts)}")
     return ref_dfs, comp_dfs
 
 

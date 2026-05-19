@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import pandas as pd
 from dataclasses import dataclass
@@ -194,19 +195,34 @@ class HOTAData:
         if self.video_id != other.video_id or self.frame != other.frame:
             return False
             
-        # Check all numeric arrays in the metrics
+        if not np.array_equal(self.iou_thresholds, other.iou_thresholds):
+            return False
+
         for key, value in self.metrics.__dict__.items():
+            other_value = getattr(other.metrics, key)
             if isinstance(value, np.ndarray):
-                other_value = getattr(other.metrics, key)
                 if key in ['tp', 'fn', 'fp']:
-                    # Integer arrays should be exactly equal
                     if not np.array_equal(value, other_value):
                         return False
                 else:
-                    # Float arrays should be close within tolerance
                     if not np.allclose(value, other_value, atol=tol):
                         return False
-            
+            elif isinstance(value, (int, float)):
+                if not math.isclose(value, other_value, abs_tol=tol):
+                    return False
+
+        # Sparse1DMatrix and Sparse2DMatrix are @dataclass so == is structural.
+        # matches_counts is a list (one entry per iou_threshold).
+        if self.sparse_data.keys() != other.sparse_data.keys():
+            return False
+        for key, val in self.sparse_data.items():
+            other_val = other.sparse_data[key]
+            if isinstance(val, list):
+                if len(val) != len(other_val) or any(a != b for a, b in zip(val, other_val)):
+                    return False
+            elif val != other_val:
+                return False
+
         return True
     
     def _add_TP_hashes(self, hashes: list[np.dtype[np.object_]], iou_threshold: float):

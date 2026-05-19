@@ -205,7 +205,6 @@ class HOTAReIDEvaluator:
         if not self.config.suppress_print_statements:
             print(f"Merging HOTA data")
         self.global_hota_data = merge_hota_data(list(self.per_video_hota_data.values()), config=self.config)
-        self.global_hota_data.video_id = None  # remove the video_id from the global HOTA_DATA object
         if not self.config.suppress_print_statements:
             print(f"  took: {time.time() - st} seconds")
 

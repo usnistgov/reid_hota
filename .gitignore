@@ -5,6 +5,9 @@ __pycache__/
 # Datasets
 tests/data/meva_rid_long
 hota_plots/
+data/
+dist/
+examples/mevid-nano/
 
 examples/eval_codetr.py
 

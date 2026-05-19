@@ -12,6 +12,7 @@ _WGS84_TO_ECEF = Transformer.from_crs("EPSG:4326", "EPSG:4978", always_xy=False)
 ECEF_L2_DECAY_METERS = 10.0
 
 
+
 # Suppress the SettingWithCopyWarning
 pd.options.mode.chained_assignment = None
 
@@ -25,6 +26,10 @@ def merge_hota_data(hota_data_list: List[HOTAData], config: Optional[HOTAConfig]
     """
     Merge a list of HOTA data objects into a single aggregated object.
 
+    The merged object's video_id is set to the shared video_id when all inputs
+    agree (per-frame → per-video merge), or None when they differ (per-video →
+    global merge).
+
     Args:
         hota_data_list: List of HOTAData objects to merge
         config: Optional HOTAConfig used only to shape the empty-list placeholder
@@ -37,7 +42,7 @@ def merge_hota_data(hota_data_list: List[HOTAData], config: Optional[HOTAConfig]
         Single merged HOTAData object
 
     Raises:
-        ValueError: If any video_id is None
+        MissingVideoIDError: If any item at index 1+ has video_id=None
     """
     if len(hota_data_list) == 0:
         # Empty placeholder must honor caller's iou_thresholds shape, otherwise
@@ -47,13 +52,19 @@ def merge_hota_data(hota_data_list: List[HOTAData], config: Optional[HOTAConfig]
     global_hota_data = copy.deepcopy(hota_data_list[0])
     global_hota_data.frame = None
 
+    first_video_id = hota_data_list[0].video_id
+    all_same_video_id = True
+
     # iterate through the list of HOTA_DATAs and add them together, starting at 1
     # we already have the first HOTA_DATA in global_hota_data
     for dat in hota_data_list[1:]:
         if dat.video_id is None:
             raise MissingVideoIDError()
+        if dat.video_id != first_video_id:
+            all_same_video_id = False
         global_hota_data += dat
-        
+
+    global_hota_data.video_id = first_video_id if all_same_video_id else None
     global_hota_data._finalize()
     return global_hota_data
 
@@ -504,7 +515,11 @@ def normalize_cost_matrix(cost_matrix: np.ndarray) -> np.ndarray:
     epsilon = 1e-8
 
     if np.size(cost_matrix) == 1:
-        # don't normalize single values to 1.0
+        # Design decision: skip normalization for 1x1 matrices. Normalizing would
+        # collapse any non-zero value to 1.0, destroying magnitude information needed
+        # to compare independent 1x1 frames against each other. This path is hit
+        # frequently (thousands of times per evaluation) and similarity metrics like
+        # lat/lon are not bounded to [0, 1], so the raw value must be preserved.
         return cost_matrix
 
     # Compute row and column sums once

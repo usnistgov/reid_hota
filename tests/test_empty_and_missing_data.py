@@ -89,6 +89,23 @@ def test_empty_ref_comp_has_detections_sparse():
     assert out['UnmatchedFP'] == 3
 
 
+def test_unmatched_fp_is_per_frame_total():
+    """Same comp ID appearing across N frames with no matching ref counts N times.
+
+    Locks per-frame-total semantics: UnmatchedFP counts per-frame detections, not
+    unique IDs. One comp id across 3 frames → 3, not 1.
+    """
+    comp = make_df([
+        {'frame': 0, 'id': 10, 'x1': 0, 'y1': 0, 'x2': 1, 'y2': 1},
+        {'frame': 1, 'id': 10, 'x1': 0, 'y1': 0, 'x2': 1, 'y2': 1},
+        {'frame': 2, 'id': 10, 'x1': 0, 'y1': 0, 'x2': 1, 'y2': 1},
+    ])
+    ev = HOTAReIDEvaluator(n_workers=0, config=_basic_cfg(reference_contains_dense_annotations=False))
+    ev.evaluate({'v': empty_df()}, {'v': comp})
+    out = ev.get_global_hota_data()
+    assert out['UnmatchedFP'] == 3
+
+
 # ---------------------------------------------------------------------------
 # §1.3 — comp empty, ref has annotations
 # ---------------------------------------------------------------------------

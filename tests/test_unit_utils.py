@@ -214,12 +214,18 @@ def test_merge_single_item_finalized():
     assert out.metrics.tp[0] == h.metrics.tp[0]
 
 
-def test_merge_video_id_propagated_from_first_item():
-    """Locks the *current* (buggy) leak — see test_known_bugs.test_merge_resets_video_id."""
+def test_merge_mixed_video_ids_clears_to_none():
     h1 = _populated_hota(video_id="vid_a")
     h2 = _populated_hota(video_id="vid_b")
     out = merge_hota_data([h1, h2])
-    assert out.video_id == "vid_a"  # leaks; reid_hota.py wipes it after
+    assert out.video_id is None
+
+
+def test_merge_same_video_id_preserved():
+    h1 = _populated_hota(video_id="vid_a", frame=0)
+    h2 = _populated_hota(video_id="vid_a", frame=1)
+    out = merge_hota_data([h1, h2])
+    assert out.video_id == "vid_a"
 
 
 def test_merge_none_video_id_raises():
@@ -289,4 +295,25 @@ def test_not_equal_different_video_id():
 def test_not_equal_different_frame():
     a = _populated_hota(frame=0)
     b = _populated_hota(frame=1)
+    assert not a.is_equal(b)
+
+
+def test_not_equal_different_unmatched_fp():
+    a = _populated_hota()
+    b = _populated_hota()
+    b.metrics.unmatched_fp = a.metrics.unmatched_fp + 999
+    assert not a.is_equal(b)
+
+
+def test_not_equal_different_sparse_data():
+    a = _populated_hota()
+    b = _populated_hota()
+    b.sparse_data['ref_id_counts'].add_at(9999, 42)
+    assert not a.is_equal(b)
+
+
+def test_not_equal_different_iou_thresholds():
+    a = _populated_hota()
+    b = _populated_hota()
+    b.iou_thresholds = np.array([0.5, 0.7])
     assert not a.is_equal(b)
